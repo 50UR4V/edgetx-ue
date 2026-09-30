@@ -600,7 +600,9 @@ static size_t cfgGet(uint16_t id, uint8_t* out) {
     case CFG_GEN_HAPTIC_LEN: { int16_t v=(int16_t)g_eeGeneral.hapticLength; uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)((v>>8)&0xFF)}; return cfgValuePayload(id, T_I16, b, 2, out); }
     case CFG_GEN_BEEP_LEN:   { int16_t v=(int16_t)g_eeGeneral.beepLength; uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)((v>>8)&0xFF)}; return cfgValuePayload(id, T_I16, b, 2, out); }
     // Hardware / connectivity / warnings — Set 3
+#if !defined(COLORLCD)
     case CFG_GEN_CONTRAST:   { uint16_t v=(uint16_t)g_eeGeneral.contrast; uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)(v>>8)}; return cfgValuePayload(id, T_U16, b, 2, out); }
+#endif  // COLORLCD radios have no LCD contrast setting
     case CFG_GEN_BT_MODE:    { uint8_t b = (uint8_t)g_eeGeneral.bluetoothMode; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case CFG_GEN_FAI:        { uint8_t b = g_eeGeneral.fai ? 1 : 0; return cfgValuePayload(id, T_BOOL, &b, 1, out); }
     case CFG_GEN_WARN_MEM:   { uint8_t b = g_eeGeneral.disableMemoryWarning ? 1 : 0; return cfgValuePayload(id, T_BOOL, &b, 1, out); }
@@ -684,7 +686,9 @@ static uint8_t cfgSet(uint16_t id, uint8_t type, const uint8_t* data, uint8_t le
     case CFG_GEN_HAPTIC_LEN: { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v=(int16_t)(data[0]|(data[1]<<8)); if (v < -2 || v > 2) return NACK_OUT_OF_RANGE; g_eeGeneral.hapticLength = (int8_t)v; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_BEEP_LEN:   { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v=(int16_t)(data[0]|(data[1]<<8)); if (v < -2 || v > 2) return NACK_OUT_OF_RANGE; g_eeGeneral.beepLength = (int8_t)v; storageDirty(EE_GENERAL); return 0; }
     // Hardware / connectivity / warnings — Set 3
+#if !defined(COLORLCD)
     case CFG_GEN_CONTRAST:   { if (type != T_U16 || len != 2) return NACK_BAD_TYPE; uint16_t v=data[0]|(data[1]<<8); if (v < LCD_CONTRAST_MIN || v > LCD_CONTRAST_MAX) return NACK_OUT_OF_RANGE; g_eeGeneral.contrast = (uint8_t)v; storageDirty(EE_GENERAL); return 0; }
+#endif  // COLORLCD radios have no LCD contrast setting
     case CFG_GEN_BT_MODE:    { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 2) return NACK_OUT_OF_RANGE; g_eeGeneral.bluetoothMode = data[0]; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_FAI:        { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_eeGeneral.fai = data[0] ? 1 : 0; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_WARN_MEM:   { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_eeGeneral.disableMemoryWarning = data[0] ? 1 : 0; storageDirty(EE_GENERAL); return 0; }
