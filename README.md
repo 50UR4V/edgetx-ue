@@ -1,51 +1,51 @@
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/Edgetx/edgetx)](https://github.com/EdgeTX/edgetx/releases/latest)
-[![GitHub all releases](https://img.shields.io/github/downloads/EdgeTX/edgetx/total)](https://github.com/EdgeTX/edgetx/releases)
-[![GitHub license](https://img.shields.io/github/license/Edgetx/edgetx)](https://github.com/EdgeTX/edgetx/blob/main/LICENSE)
-[![Commit Tests](https://github.com/EdgeTX/edgetx/actions/workflows/build_fw.yml/badge.svg)](https://github.com/EdgeTX/edgetx/actions/workflows/build_fw.yml)
-[![GitHub CodesSpaces ready-to-code](https://img.shields.io/badge/GitHub%20CodesSpaces-ready--to--code-blue?logo=github)](https://codespaces.new/EdgeTX/edgetx)
-[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)](https://conventionalcommits.org)
-[![Discord](https://img.shields.io/discord/839849772864503828.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/wF9wUKnZ6H)
-[![Support us on OpenCollective](https://img.shields.io/opencollective/all/edgetx)](https://opencollective.com/edgetx)
+# edgetx-ue — EdgeTX with the UltraEdge companion overlay
 
+**This is a fork of [EdgeTX](https://github.com/EdgeTX/edgetx) that adds the UltraEdge companion link.**
+With this firmware flashed, an EdgeTX radio can drive the **UltraEdge** Android app over USB — turning
+your phone into a big touchscreen for a radio that only has a small screen and a few buttons.
 
-<p align="center">
-<a href="https://raw.githubusercontent.com/EdgeTX/edgetx.github.io/master/docs/assets/logo.png"><img src="https://raw.githubusercontent.com/EdgeTX/edgetx.github.io/master/docs/assets/logo.png" align="center" height="150" width="150" ></a>
+Your radio always flies on its own. The companion overlay is **dormant until a phone is plugged in** and
+is never in the flight-control path — unplug the phone and the radio behaves exactly like stock EdgeTX.
+When the companion is compiled out, the build is byte-for-byte identical to upstream EdgeTX.
 
-# Welcome to EdgeTX!
-**The cutting edge open-source firmware for your R/C radio!**
+## Get the app / the ecosystem
+- 📱 **UltraEdge app (Google Play):** https://play.google.com/store/apps/details?id=com.ultraedge.companion
+- 🔌 **UE Protocol** (the open radio↔phone link this firmware speaks): https://github.com/50UR4V/ue-protocol
+- 📖 **App home / manual / support:** https://github.com/50UR4V/UltraEdge-app
+- 🖨️ **3D-printable phone mounts:** https://github.com/50UR4V/ultraedge-mounts
 
+## Prebuilt firmware (download & flash)
+Grab the `.bin` for your radio from **[Releases](../../releases)**, then follow [`FLASHING.md`](FLASHING.md).
 
-### About EdgeTX
-EdgeTX is the cutting edge of OpenTX. It is the place where innovative ideas and cutting-edge features are developed and field-tested by the enthusiasts of our hobby. EdgeTX is a community project – ideas from the community, developed by the community, and enjoyed by the community! The community will always have a say in what EdgeTX is and what EdgeTX will be in the future. Without community feedback and involvement EdgeTX cannot exist.
+| Radio | MCU | Status |
+|---|---|---|
+| RadioMaster **Pocket** | STM32F407 | ✅ Verified — prebuilt in Releases |
+| FrSky **QX7 / QX7 Access** | STM32F205 | ✅ Verified — prebuilt in Releases |
+| RadioMaster **TX16S**, **Zorro**, others | — | 🔜 Planned — **build it yourself** today ([`BUILD-HOWTO.md`](BUILD-HOWTO.md)) |
 
-### Community
-- [Discord](https://discord.gg/wF9wUKnZ6H)   
+> Color-LCD radios (TX16S, Zorro, …) use a different UI stack than the mono QX7/Pocket and are not yet
+> verified. We add a radio to the prebuilt list only after it has been built **and** sanity-checked on real
+> hardware — no untested flight firmware ships here. Want yours next? Build it with the how-to and tell us
+> how it goes in **[Issues](../../issues)**.
 
-- [Facebook](https://www.facebook.com/groups/edgetx)
+## Build it yourself
+See **[`BUILD-HOWTO.md`](BUILD-HOWTO.md)** for two paths:
+- **GitHub Codespaces** (no local toolchain — build in the browser, based on EdgeTX's own Codespaces flow).
+- **Native / local** (macOS Arm toolchain or the EdgeTX Docker image).
 
-- [Github Discussions](https://github.com/EdgeTX/edgetx/discussions)
-  
-### Navigation Links
+Both produce a `.bin` you flash exactly like the prebuilt ones.
 
-- [Community Guidelines](https://github.com/EdgeTX/edgetx.github.io/wiki/Community-Guidlines)
+## Compatibility
+This release speaks **UE Protocol v4** and pairs with **UltraEdge app v1.0.0**. Firmware and app negotiate
+the protocol version at connect; keep them on matching major releases.
 
-- [Installation Guide](https://manual.edgetx.org/installing-and-updating-edgetx/update-from-opentx-to-edgetx)
+## Relationship to upstream EdgeTX
+This fork tracks a pinned EdgeTX base commit and adds one overlay: a self-contained
+`radio/src/thirdparty/ultraedge/` module plus small, `#if defined(USB_COMPANION)`-guarded hooks into
+audio, telemetry and USB. We intend to keep rebasing onto EdgeTX and to discuss upstreaming the hooks with
+the EdgeTX team. This is a **community project and is not affiliated with or endorsed by EdgeTX or FrSky.**
 
-- [Installation Video](https://www.youtube.com/watch?v=Y9OvW9XCjOs)
-
-- [Reporting Issues / Requesting features](https://github.com/EdgeTX/edgetx/issues/new/choose)
-
-- [Lua Documentation Site](https://luadoc.edgetx.org/)
-  
-- Buddy: [Info](https://github.com/EdgeTX/buddy) - [Downloads](https://github.com/EdgeTX/buddy/releases) 
-
-- SD Card: [Info](https://github.com/EdgeTX/edgetx-sdcard) - [Downloads](https://github.com/EdgeTX/edgetx-sdcard/releases)
-
-- Sound Packs:  [Info](https://github.com/EdgeTX/edgetx-sdcard-sounds) - [Downloads](https://github.com/EdgeTX/edgetx-sdcard-sounds/releases)
-
-- [Developer Documentation](https://edgetx.org/edgetx/latest/) - [Docker Build Environment](https://github.com/EdgeTX/build-edgetx)
-
-
-## Acknowledgements
-Some icon assets provided by [ICONS8](https://icons8.com).</br>
-Lua Documentation site powered with the kind support of [GitBook](https://www.gitbook.com).
+## License
+EdgeTX is licensed **GPL-3.0-or-later**; this fork is a derivative work and is distributed under the **same
+GPL-3.0** terms. The complete corresponding source — upstream EdgeTX history plus the UltraEdge overlay
+commit — is in this repository. See [`LICENSE`](LICENSE).

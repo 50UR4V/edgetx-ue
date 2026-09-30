@@ -26,6 +26,24 @@
 #include "edgetx.h"
 #include "telemetry/spektrum.h"
 
+#if !defined(MULTIMODULE)
+// UltraEdge small-radio support (docs/28): when a target is built without the internal
+// MULTI (4-in-1) stack — e.g. the ELRS RadioMaster Pocket, to fit 512 KB flash — the Lua
+// <-> MULTI shared buffer (Multi_Buffer, normally defined in lua/api_general.cpp under
+// MULTIMODULE) is gone, but this file (LemonRX DSMP) references it. LemonDSMP is only
+// reachable via a MULTI-family protocol selection, which no longer exists, so it is never
+// invoked at runtime; provide a real (small) buffer so the file still compiles and links,
+// and can never null-deref if somehow reached.
+//
+// NOTE: the include + definition below are BOTH inside this !MULTIMODULE guard on purpose,
+// so that when MULTIMODULE IS defined (QX7, stock, all normal targets) this file is
+// byte-for-byte identical to upstream — nothing UltraEdge leaks into a MULTI build. Verified
+// by the OFF==stock byte-compare gate (docs/30).
+#include "telemetry/multi.h"   // MULTI_BUFFER_SIZE + the Multi_Buffer extern
+static uint8_t s_ultraedgeDsmpBuf[MULTI_BUFFER_SIZE];
+uint8_t* Multi_Buffer = s_ultraedgeDsmpBuf;
+#endif
+
 #define DSMP_SEND_X_PLUS    0
 
 #define DSMP_BITRATE        115200

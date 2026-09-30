@@ -456,7 +456,10 @@ OutputTelemetryBuffer outputTelemetryBuffer __DMA_NO_CACHE;
 
 #if defined(LUA)
 TelemetryQueue* luaInputTelemetryFifo = nullptr;
-#if defined(COLORLCD)
+// UltraEdge (docs/32): the extra-queue registry is COLORLCD-only upstream; also enable it under
+// USB_COMPANION so B&W companion targets (QX7/Pocket) can tap raw passthrough telemetry. Guarded
+// by our off-by-default flag, so stock B&W firmware is byte-for-byte unchanged.
+#if defined(COLORLCD) || defined(USB_COMPANION)
 std::list<TelemetryQueue*> telemetryQueues;
 
 void registerTelemetryQueue(TelemetryQueue* queue)
@@ -481,7 +484,7 @@ static void pushDataToQueue(TelemetryQueue* queue, uint8_t* data, int length)
 
 void pushTelemetryDataToQueues(uint8_t* data, int length)
 {
-#if defined(COLORLCD)
+#if defined(COLORLCD) || defined(USB_COMPANION)
   for (auto it = telemetryQueues.cbegin(); it != telemetryQueues.cend(); ++it)
     pushDataToQueue(*it, data, length);
 #endif

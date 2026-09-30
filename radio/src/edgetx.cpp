@@ -170,6 +170,10 @@ void checkValidMCU(void)
 #endif
 }
 
+#if defined(USB_COMPANION)
+extern "C" void ultraedgeCompanionTick();
+#endif
+
 void per10ms()
 {
   DEBUG_TIMER_START(debugTimerPer10ms);
@@ -246,6 +250,10 @@ void per10ms()
 #endif
 
   outputTelemetryBuffer.per10ms();
+
+#if defined(USB_COMPANION)
+  ultraedgeCompanionTick();
+#endif
 
   heartbeat |= HEART_TIMER_10MS;
 

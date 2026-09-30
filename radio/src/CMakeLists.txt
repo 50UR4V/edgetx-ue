@@ -17,6 +17,7 @@ option(FLIGHT_MODES "Flight Modes" ON)
 option(CURVES "Curves" ON)
 option(GVARS "Global variables" ON)
 option(GUI "GUI enabled" ON)
+option(UI_COMPANION "UltraEdge: drop native config-editor menus/audio/voice/haptic (phone is the UI/UX)" OFF)
 option(PPM_CENTER_ADJUSTABLE "PPM center adjustable" ON)
 option(PPM_LIMITS_SYMETRICAL "PPM limits symetrical" OFF)
 option(OVERRIDE_CHANNEL_FUNCTION "OverrideChannel function available" ON)
@@ -127,6 +128,28 @@ set(${RADIO_NAME} YES)
 add_definitions(
   -DCPU_TYPE=${CPU_TYPE} -DCPU_TYPE_FULL=${CPU_TYPE_FULL}
 )
+
+# UltraEdge: define USB_COMPANION here — BEFORE add_executable(firmware) — so the
+# flag reaches EVERY firmware source. Defining it after the target was the HW-2 bug.
+# The companion module now lives entirely under thirdparty/ultraedge/ (docs/30 refactor):
+# companion_emit.cpp (firmware-integrated, needs core headers) is added to SRC from its
+# module path; protocol.cpp builds as the standalone ultraedge_protocol lib (linked below).
+if(USB_COMPANION)
+  add_definitions(-DUSB_COMPANION)
+  # The companion rides the STANDARD USB serial (CDC/VCP) mode — there is no separate UE USB mode
+  # (docs/29: negotiate over plain serial, take over only after a HELLO handshake). So the companion
+  # REQUIRES USB serial. Many targets leave USB_SERIAL off by default (e.g. plain X7/QX7), which drops
+  # the "USB Serial" entry from the USB-connect menu (main.cpp: #if defined(USB_SERIAL)) and makes the
+  # companion unreachable though it's built in. Guarantee it here — in the shared, target-agnostic
+  # firmware CMake, BEFORE the STM32 USB layer is included — so it holds for EVERY radio that builds
+  # the companion, not one target's incidental flags. cache FORCE so it survives the later
+  # `option(USB_SERIAL ... OFF)` and drives every `if(... USB_SERIAL)` gate. (ADR-0012)
+  set(USB_SERIAL ON CACHE BOOL "UltraEdge companion requires USB serial (CDC/VCP)" FORCE)
+  set(SRC ${SRC} thirdparty/ultraedge/companion_emit.cpp)
+  # module dir on the include path so companion_emit.cpp finds "protocol.h"
+  # (established before add_executable(firmware) to be unambiguous for reviewers).
+  include_directories(thirdparty/ultraedge)
+endif()
 
 set(HW_DESC_JSON ${FLAVOUR}.json)
 
@@ -266,6 +289,10 @@ endif()
 if(GVARS)
   add_definitions(-DGVARS)
   set(SRC ${SRC} gvars.cpp)
+endif()
+
+if(UI_COMPANION)
+  add_definitions(-DUI_COMPANION)   # UltraEdge: phone provides the UI/UX; drop native menus (see gui CMakeLists)
 endif()
 
 if(FAI STREQUAL YES)
@@ -763,6 +790,13 @@ if(ACCESS_DENIED)
   add_subdirectory(thirdparty/AccessDenied)
   include_directories(thirdparty/AccessDenied)
   target_link_libraries(firmware PRIVATE AccessDenied)
+endif()
+
+# UltraEdge companion protocol library link (the -DUSB_COMPANION define is set
+# earlier, BEFORE add_executable(firmware), so it reaches every source file).
+if(USB_COMPANION)
+  add_subdirectory(thirdparty/ultraedge)
+  target_link_libraries(firmware PRIVATE ultraedge_protocol)
 endif()
 
 if(FIRMWARE_STRIP_BOOTLOADER)

@@ -1,4 +1,5 @@
 option(SHUTDOWN_CONFIRMATION "Shutdown confirmation" OFF)
+option(USB_COMPANION "UltraEdge companion protocol over USB-CDC" OFF)
 option(PXX1 "PXX1 protocol support" ON)
 option(PXX2 "PXX2 protocol support" OFF)
 option(AFHDS3 "AFHDS3 TX Module" OFF)

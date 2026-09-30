@@ -33,6 +33,18 @@
 
 extern mutex_handle_t audioMutex;
 
+#if defined(USB_COMPANION)
+// P2 unified audio (docs/ARCH §4): while the UltraEdge app owns the UX plane, EVERY sound EdgeTX
+// would play (system prompts, number call-outs, SF tracks, Lua playFile, beeps) is diverted to the
+// phone from this single choke point, with a fully-resolved path — no name-guessing. Implemented in
+// thirdparty/ultraedge/companion_emit.cpp; these are the only symbols audio.cpp needs.
+extern "C" bool ultraedgeUxOwnerPresent();
+extern "C" void ultraedgeQueueAudioFile(const char* filename, uint8_t flags, uint8_t id);
+extern "C" void ultraedgeQueueAudioTone(uint16_t freq, uint16_t len, uint16_t pause,
+                                        uint8_t flags, int8_t freqIncr);
+extern "C" void ultraedgeQueueAudioStop(uint8_t kind, uint8_t id);
+#endif
+
 // Only first quadrant values - other quadrants calulated taking advantage of symmetry in sine wave.
 const int16_t sineValues[] =
 {
@@ -745,6 +757,10 @@ bool AudioQueue::isPlaying(uint8_t id)
 
 void AudioQueue::playTone(uint16_t freq, uint16_t len, uint16_t pause, uint8_t flags, int8_t freqIncr, int8_t fragmentVolume)
 {
+#if defined(USB_COMPANION)
+  // P2: while the app owns the UX plane, beeps play on the phone, not the radio speaker.
+  if (ultraedgeUxOwnerPresent()) { ultraedgeQueueAudioTone(freq, len, pause, flags, freqIncr); return; }
+#endif
   _audio_lock();
 
   freq = limit<uint16_t>(BEEP_MIN_FREQ, freq, BEEP_MAX_FREQ);
@@ -774,6 +790,13 @@ void AudioQueue::playTone(uint16_t freq, uint16_t len, uint16_t pause, uint8_t f
 
 void AudioQueue::playFile(const char * filename, uint8_t flags, uint8_t id, int8_t fragmentVolume)
 {
+#if defined(USB_COMPANION)
+  // P2: single choke point — system prompts, number call-outs, SF tracks and Lua playFile all reach
+  // here with a fully-resolved path. Divert to the phone (which mirrors the SOUNDS tree) and return,
+  // so the app plays exactly what the radio would, in order, with no name-guessing. Tap sits above
+  // the radio-SD checks on purpose: the phone has the file even if the radio's own SD isn't mounted.
+  if (filename && ultraedgeUxOwnerPresent()) { ultraedgeQueueAudioFile(filename, flags, id); return; }
+#endif
   if (!sdMounted())
     return;
 
@@ -800,6 +823,9 @@ void AudioQueue::playFile(const char * filename, uint8_t flags, uint8_t id, int8
 
 void AudioQueue::stopPlay(uint8_t id)
 {
+#if defined(USB_COMPANION)
+  if (ultraedgeUxOwnerPresent()) ultraedgeQueueAudioStop(3 /*AUDIO_STOP_ID*/, id);
+#endif
   _audio_lock();
 
   fragmentsFifo.removePromptById(id);
@@ -817,6 +843,9 @@ void AudioQueue::stopSD()
 
 void AudioQueue::stopAll()
 {
+#if defined(USB_COMPANION)
+  if (ultraedgeUxOwnerPresent()) ultraedgeQueueAudioStop(4 /*AUDIO_STOP_ALL*/, 0);
+#endif
   flush();
   _audio_lock();
   priorityContext.clear();
@@ -826,6 +855,9 @@ void AudioQueue::stopAll()
 
 void AudioQueue::flush()
 {
+#if defined(USB_COMPANION)
+  if (ultraedgeUxOwnerPresent()) ultraedgeQueueAudioStop(5 /*AUDIO_FLUSH*/, 0);
+#endif
   _audio_lock();
   fragmentsFifo.clear();
   varioContext.clear();

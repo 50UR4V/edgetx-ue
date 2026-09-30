@@ -379,6 +379,20 @@ void usbSerialSetReceiveDataCb(void*, void (*cb)(uint8_t*, uint32_t))
   receiveDataCb = cb;
 }
 
+// UltraEdge negotiated sub-mode (docs/29): the companion installs a wrapper RX callback that
+// forwards to whatever consumer was already installed (CLI / Lua / telemetry-mirror) until it
+// sniffs a valid companion HELLO. To chain to that prior consumer it must read it back first.
+//
+// NOT guarded by USB_COMPANION on purpose: usbd_cdc.cpp compiles into the shared stm32 driver
+// library, which does not receive the firmware target's -DUSB_COMPANION define. Left
+// unconditional and unreferenced in a stock build, it is dropped by -ffunction-sections +
+// --gc-sections at link, so a stock (flag-off) firmware stays byte-for-byte unchanged (verified
+// by the OFF==stock byte-compare gate, docs/30).
+void (*usbSerialGetReceiveDataCb(void))(uint8_t*, uint32_t)
+{
+  return receiveDataCb;
+}
+
 void usbSerialSetBaudRateCb(void*, void (*cb)(uint32_t))
 {
   // baudRateCb = nullptr;
