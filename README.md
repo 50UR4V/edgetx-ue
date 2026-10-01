@@ -8,6 +8,15 @@ Your radio always flies on its own. The companion overlay is **dormant until a p
 is never in the flight-control path — unplug the phone and the radio behaves exactly like stock EdgeTX.
 When the companion is compiled out, the build is byte-for-byte identical to upstream EdgeTX.
 
+<p align="center"><img src="screenshots/UE_IMG3.jpeg" alt="Phone mounted on a RadioMaster Pocket running this firmware, showing a Lua telemetry screen" width="420"></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="screenshots/UE_IMG4.jpeg" alt="Home dashboard — RSSI, battery, timer"><br><sub>Home dashboard — live RSSI, battery, timer, model.</sub></td>
+    <td width="50%"><img src="screenshots/UE_IMG2.jpeg" alt="Telemetry / OSD screen"><br><sub>Your radio's telemetry/OSD screens on the phone.</sub></td>
+  </tr>
+</table>
+
 ## Get the app / the ecosystem
 - 📱 **UltraEdge app (Google Play):** https://play.google.com/store/apps/details?id=com.ultraedge.companion
 - 🔌 **UE Protocol** (the open radio↔phone link this firmware speaks): https://github.com/50UR4V/ue-protocol
