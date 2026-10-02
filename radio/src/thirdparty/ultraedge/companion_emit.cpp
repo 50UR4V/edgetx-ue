@@ -38,6 +38,48 @@
 #endif
 #include "protocol.h"
 
+// ---------------------------------------------------------------------------
+// UE_DEBUG_CRUMBS — power-off-surviving breadcrumbs for diagnosing the colorlcd
+// (TX16S) shutdown. The companion tick runs in the 10ms timer-service task; we
+// only set a RAM stage code there (cheap, no I/O) and flush it to the SD card
+// from the MAIN task (ueCrumbFlush(), called from perMain) where FatFs is safe.
+// Entirely compiled out unless -DUE_DEBUG_CRUMBS, so normal builds are unchanged.
+// ---------------------------------------------------------------------------
+#if defined(UE_DEBUG_CRUMBS)
+volatile uint8_t ueCrumbStage = 0;   // last milestone reached in the companion path
+volatile uint8_t ueCrumbMsg   = 0;   // last protocol message type dispatched in onFrame
+#define UE_CRUMB(n)      do { ueCrumbStage = (uint8_t)(n); } while (0)
+#define UE_CRUMB_MSG(t)  do { ueCrumbMsg   = (uint8_t)(t); } while (0)
+extern "C" void ueCrumbFlush() {   // called from perMain() — MAIN task, SD-safe
+  // High-water mark: each tick re-climbs 10..20, so only log when a NEW furthest stage is
+  // reached. The trail ascends monotonically; its LAST line is where the firmware died.
+  static uint8_t hiStage = 0, hiMsg = 0;
+  uint8_t s = ueCrumbStage, mg = ueCrumbMsg;
+  if (s <= hiStage && mg == hiMsg) return;
+  if (s > hiStage) hiStage = s;
+  hiMsg = mg;
+  uint8_t lastStage = s, lastMsg = mg;
+  FIL f;
+  if (f_open(&f, "/uecrumb.txt", FA_OPEN_ALWAYS | FA_WRITE) != FR_OK) return;
+  f_lseek(&f, f_size(&f));
+  char line[48];
+  int n = 0; const char* p = "stage=";
+  while (*p) line[n++] = *p++;
+  line[n++] = '0' + (lastStage / 100) % 10;
+  line[n++] = '0' + (lastStage / 10) % 10;
+  line[n++] = '0' + lastStage % 10;
+  p = " msg=0x"; while (*p) line[n++] = *p++;
+  const char* hex = "0123456789abcdef";
+  line[n++] = hex[(lastMsg >> 4) & 0xF];
+  line[n++] = hex[lastMsg & 0xF];
+  line[n++] = '\n';
+  UINT bw; f_write(&f, line, n, &bw); f_sync(&f); f_close(&f);
+}
+#else
+#define UE_CRUMB(n)      do {} while (0)
+#define UE_CRUMB_MSG(t)  do {} while (0)
+#endif
+
 extern void mixerTaskStop();
 extern void mixerTaskStart();
 extern uint8_t getCurvePoints(uint8_t index);   // curves.cpp (no header decl); docs/13
@@ -1258,6 +1300,7 @@ static const uint16_t BULK_BYTES_PER_TICK = 512;     // pacing cap (2 chunks/tic
 static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len);   // fwd decl (defined below)
 
 static void ueStartModelPull(uint8_t which) {
+  UE_CRUMB(40);   // about to touch SD (f_open) from the companion/timer-task context
   if (s_bulkActive) { f_close(&s_bulkFile); s_bulkActive = false; }   // supersede any in-flight xfer
   char path[64];
   const char* fn;
@@ -1287,6 +1330,7 @@ static void ueStartModelPull(uint8_t which) {
     emitMsg(MSG_BULK_ABORT, ab, sizeof(ab));
     return;
   }
+  UE_CRUMB(41);   // f_open OK — SD read succeeded from timer-task context
   s_bulkTotal  = (uint32_t)f_size(&s_bulkFile);
   s_bulkOffset = 0; s_bulkCrc = 0xFFFF; s_bulkKind = kind; s_bulkXferId++;
   s_bulkActive = true;
@@ -1534,13 +1578,25 @@ extern "C" void ultraedgeQueueAudioStop(uint8_t kind, uint8_t id) {
 // forward the bytes to the app as a transparent pipe; the app's Lua re-frames them. Registered
 // lazily (only while a passthrough script is subscribed) so it costs nothing otherwise.
 static TelemetryQueue s_telemQueue;
-static bool s_telemQueueReg = false;
+static bool s_telemQueueReg = false;            // actual registration state (owned by the MAIN task)
+static volatile bool s_telemQueueWant = false;  // desired state, set from the companion tick
 static uint8_t telemProto() {
   return (isModuleCrossfire(EXTERNAL_MODULE) || isModuleCrossfire(INTERNAL_MODULE)) ? 2 : 1;
 }
-static void telemQueueSet(bool on) {
-  if (on && !s_telemQueueReg) { registerTelemetryQueue(&s_telemQueue); s_telemQueueReg = true; }
-  else if (!on && s_telemQueueReg) { deregisterTelemetryQueue(&s_telemQueue); s_telemQueueReg = false; s_telemQueue.clear(); }
+// CRITICAL (ADR-0020): registerTelemetryQueue/deregisterTelemetryQueue mutate a std::list that the
+// telemetry RX path (crossfire/frsky -> pushTelemetryDataToQueues) iterates WITHOUT a lock. The
+// companion tick runs in the 10ms timer-service task, so mutating the list there races that iteration
+// and corrupts it — fatal on colorlcd (TX16S), where a Lua telemetry widget keeps the list live
+// (QX7/Pocket get away with it only because nothing else registers a queue). So the tick NEVER touches
+// the list: it only records intent here, and ueCompanionMainSync() (below) performs the actual
+// register/deregister from the MAIN task — the same context Lua widgets use.
+static void telemQueueSet(bool on) { s_telemQueueWant = on; }
+extern "C" void ueCompanionMainSync() {   // called from perMain() — MAIN task
+  if (s_telemQueueWant && !s_telemQueueReg) {
+    registerTelemetryQueue(&s_telemQueue); s_telemQueueReg = true;
+  } else if (!s_telemQueueWant && s_telemQueueReg) {
+    deregisterTelemetryQueue(&s_telemQueue); s_telemQueueReg = false; s_telemQueue.clear();
+  }
 }
 
 // ---- Class-2 byte budget (docs/08 OQ-L1) -----------------------------------
@@ -1775,6 +1831,7 @@ static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg)
 // Decoder callback: one decoded, CRC-valid frame.
 static void onFrame(const Message& m, void*)
 {
+  UE_CRUMB(30); UE_CRUMB_MSG(m.type);   // dispatching a decoded frame (msg type recorded)
   // ANY frame that reaches here passed HDLC framing + CRC16 + proto-version — i.e. it is a
   // genuine companion frame (stock CLI / telemetry chatter never decodes as one). So a
   // decoded frame is proof a companion is talking: take over the Serial RX and keep it taken
@@ -2035,6 +2092,8 @@ extern "C" void ultraedgeCompanionTick()
     return;
   }
 
+  UE_CRUMB(10);   // SERIAL mode + USB started: companion engaging
+
   if (!s_inited) {
     s_dec.reset();
     s_dec.setCallback(onFrame, nullptr);
@@ -2042,6 +2101,7 @@ extern "C" void ultraedgeCompanionTick()
     s_keysAccepted = 0;
     s_inited = true;
   }
+  UE_CRUMB(11);   // decoder/link initialised
   if (!s_cbSet) {
     // Capture whatever consumer EdgeTX already installed for Serial (CLI/Lua/telemetry),
     // then install our wrapper. We forward to the captured one until a HELLO arrives, so
@@ -2052,6 +2112,7 @@ extern "C" void ultraedgeCompanionTick()
     usbSerialSetReceiveDataCb(nullptr, ultraedgeCompanionRxCb);
     s_cbSet = true;
   }
+  UE_CRUMB(12);   // serial RX callback captured + swapped
 
   s_nowMs += 10;
 
@@ -2061,6 +2122,7 @@ extern "C" void ultraedgeCompanionTick()
     s_rxTail = (uint16_t)((s_rxTail + 1) % RX_RING);
     s_dec.feed(&b, 1);
   }
+  UE_CRUMB(13);   // RX ring drained into decoder (frames dispatched via onFrame)
 
   // Link heartbeat/timeout bookkeeping.
   s_link.tick(s_nowMs);
@@ -2071,6 +2133,7 @@ extern "C" void ultraedgeCompanionTick()
   // nothing. The moment onFrame() sees the HELLO it flips active and also emits HELLO_ACK,
   // so the host still gets its immediate reply.
   if (!s_companionActive) return;
+  UE_CRUMB(20);   // HELLO seen: companion ACTIVE (host opted in)
 
   ueCalTick();   // Set 4: drive EdgeTX calibration + stream live analog while a cal session is active
 
@@ -2314,6 +2377,7 @@ extern "C" void ultraedgeCompanionTick()
   // V2 BULK (docs/protocol §8-9): stream the model-pull in small SD reads, paced by the class-2
   // budget so it can't starve telemetry, and bounded per tick so one SD read never stalls the tick.
   if (s_bulkActive) {
+    UE_CRUMB(42);   // per-tick SD f_read from timer-task context (bulk streaming)
     uint16_t bulkSent = 0;
     while (s_bulkActive && bulkSent < BULK_BYTES_PER_TICK) {
       if (s_class2Budget < (uint16_t)(BULK_CHUNK + 32)) break;   // save the rest for next tick

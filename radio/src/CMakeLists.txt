@@ -134,6 +134,11 @@ add_definitions(
 # The companion module now lives entirely under thirdparty/ultraedge/ (docs/30 refactor):
 # companion_emit.cpp (firmware-integrated, needs core headers) is added to SRC from its
 # module path; protocol.cpp builds as the standalone ultraedge_protocol lib (linked below).
+if(UE_DEBUG_CRUMBS)
+  # Diagnostic-only: power-off-surviving breadcrumbs to /uecrumb.txt (companion shutdown debug).
+  # Never enable for a release build. See docs/decisions (TX16S colorlcd shutdown investigation).
+  add_definitions(-DUE_DEBUG_CRUMBS)
+endif()
 if(USB_COMPANION)
   add_definitions(-DUSB_COMPANION)
   # The companion rides the STANDARD USB serial (CDC/VCP) mode — there is no separate UE USB mode

@@ -170,9 +170,9 @@ void checkValidMCU(void)
 #endif
 }
 
-#if defined(USB_COMPANION)
-extern "C" void ultraedgeCompanionTick();
-#endif
+// ADR-0020: the companion tick MUST NOT run in the 10ms timer-service-task callback (per10ms) — it does
+// SD I/O, USB TX, list/g_model mutation that races the main/telemetry tasks (power-off on colorlcd).
+// It now runs from the MAIN task (perMain, see main.cpp). per10ms only advances time.
 
 void per10ms()
 {
@@ -251,9 +251,7 @@ void per10ms()
 
   outputTelemetryBuffer.per10ms();
 
-#if defined(USB_COMPANION)
-  ultraedgeCompanionTick();
-#endif
+  // (ADR-0020) companion tick moved OUT of this timer callback → runs in perMain() (main task).
 
   heartbeat |= HEART_TIMER_10MS;
 

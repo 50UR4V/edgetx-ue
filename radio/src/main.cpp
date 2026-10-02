@@ -551,9 +551,53 @@ void guiMain(event_t evt)
 // from logs.cpp
 void initLoggingTimer();
 
+#if defined(USB_COMPANION)
+extern "C" void ultraedgeCompanionTick();   // ALL companion processing — MAIN task only (ADR-0020)
+extern "C" void ueCompanionMainSync();       // telemetry-queue register/deregister (MAIN task)
+#endif
+#if defined(UE_DEBUG_CRUMBS)
+extern "C" void ueCrumbFlush();              // companion breadcrumbs -> SD (MAIN task)
+#endif
+
 void perMain()
 {
   DEBUG_TIMER_START(debugTimerPerMain1);
+
+#if defined(USB_COMPANION)
+  // (ADR-0020) Drive the companion from the MAIN task at ~10ms cadence. It was wrongly called from the
+  // 10ms timer-service-task callback (per10ms), where its SD I/O / USB TX / list+g_model mutation raced
+  // the main & telemetry tasks and powered off colorlcd radios. g_tmr10ms is bumped by per10ms; running
+  // once per elapsed 10ms tick keeps the companion's internal "+=10ms" pacing ~right and never bursts.
+  {
+    // Run the companion ONLY while USB Serial/VCP is the active mode (+ one trailing pass to clean up when
+    // leaving it). In Ask / Joystick / Storage / unplugged, the companion stays completely out of perMain so
+    // EdgeTX's USB-connect dialog + mode handling are byte-for-byte stock (ADR-0020: the main-task move must
+    // not disturb the USB-connect flow — the Ask dialog regression).
+    static bool ueWasSerial = false;
+    static tmr10ms_t ueLastTick = 0;
+    bool ueSerial = (getSelectedUsbMode() == USB_SERIAL_MODE);
+    if (ueSerial || ueWasSerial) {
+      ueWasSerial = ueSerial;
+      if ((tmr10ms_t)(g_tmr10ms - ueLastTick) != 0) {
+        ueCompanionMainSync();      // telemetry-queue (de)registration — safe in this context
+        // Catch-up: one tick per elapsed 10ms so streaming keeps real-time pace even when perMain is slower
+        // than 10ms (colorlcd GUI load). Capped so a slow frame can't dump a burst that stalls GUI/watchdog;
+        // extra elapsed time is dropped, not accumulated. Each tick is already byte-budget-bounded.
+        uint8_t ueGuard = 0;
+        do {
+          ueLastTick++;
+          ultraedgeCompanionTick();   // CDC parse, streams, SD pulls, config writes — MAIN-task, ~100Hz
+        } while ((tmr10ms_t)(g_tmr10ms - ueLastTick) != 0 && ++ueGuard < 4);
+        if ((tmr10ms_t)(g_tmr10ms - ueLastTick) != 0) ueLastTick = g_tmr10ms;   // fell behind: resync
+#if defined(UE_DEBUG_CRUMBS)
+        ueCrumbFlush();
+#endif
+      }
+    } else {
+      ueLastTick = g_tmr10ms;   // keep the cadence anchor current while idle so re-entry doesn't burst
+    }
+  }
+#endif
 
   checkSpeakerVolume();
 
