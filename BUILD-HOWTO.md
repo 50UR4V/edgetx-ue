@@ -72,8 +72,8 @@ raw-telemetry passthrough uses EdgeTX's LUA-gated TelemetryQueue and won't compi
 |---|---|---|
 | RadioMaster **Pocket** | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified. Internal CROSSFIRE, so external PXX1 is dropped for space. ~10 KB flash headroom. |
 | FrSky **QX7 / QX7 Access** | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES` | ✅ Verified. Internal module **is** XJT/PXX1 — keep `PXX1=YES`. |
-| RadioMaster **TX16S** | `-DPCB=X10 -DPCBREV=TX16S -DUSB_COMPANION=ON` | 🔜 **Untested.** Color-LCD (480×272) UI stack differs from mono; expect UI-hook work, not just a flag. |
-| RadioMaster **Zorro** | `-DPCB=X7 -DPCBREV=ZORRO -DUSB_COMPANION=ON` | 🔜 **Untested.** Mono-ish but unverified — build + sanity-check on hardware before trusting. |
+| RadioMaster **TX16S** | `-DPCB=X10 -DPCBREV=TX16S -DUSB_COMPANION=ON` | ✅ Verified (v1.0.1). First color-LCD target; 2 MB flash so no trims needed. Prebuilt in Releases. |
+| RadioMaster **Zorro** | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | 🔜 Builds (mono, Pocket-twin, tight ~3 KB fit) but **not yet hardware-verified** — flash + sanity-check before trusting. |
 
 Always append **`-DUSB_COMPANION=ON`**. Leaving it off (or omitting it) builds stock EdgeTX,
 byte-for-byte identical to upstream — useful to confirm your toolchain before adding the overlay.

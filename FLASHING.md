@@ -1,16 +1,17 @@
-# Flashing UltraEdge companion firmware — v1.0.0
+# Flashing UltraEdge companion firmware — v1.0.1
 
 These `.bin` files are **EdgeTX firmware with the UltraEdge companion overlay** built in. Flash the file
 that matches your radio, then pair it with the **UltraEdge** Android app over USB.
 
-> **Verified radios (this release):** RadioMaster **Pocket** (STM32F407) and FrSky **QX7 / QX7 Access**
-> (STM32F205). Other radios are **build-it-yourself** for now — see `BUILD-HOWTO.md`. More prebuilt
-> targets will land here as each is verified on real hardware.
+> **Verified radios (this release):** RadioMaster **Pocket** (STM32F407), FrSky **QX7 / QX7 Access**
+> (STM32F205), and RadioMaster **TX16S** (STM32F407, color LCD). Other radios are **build-it-yourself**
+> for now — see `BUILD-HOWTO.md`. More prebuilt targets land here as each is verified on real hardware.
 
 | File | Radio | MCU | Notes |
 |---|---|---|---|
-| `edgetx-ue-radiomaster-pocket-v1.0.0.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
-| `edgetx-ue-frsky-qx7-v1.0.0.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
+| `edgetx-ue-radiomaster-pocket-v1.0.1.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
+| `edgetx-ue-frsky-qx7-v1.0.1.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
+| `edgetx-ue-radiomaster-tx16s-v1.0.1.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | First color-LCD target. Known: telemetry refresh slower than mono. |
 
 Firmware ↔ app compatibility: **UE Protocol v4** (matches UltraEdge app **v1.0.0**).
 Verify your download against `SHA256SUMS.txt`:
