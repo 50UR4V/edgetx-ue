@@ -30,6 +30,8 @@
 #include "pulses/pulses_common.h"   // setModuleMode (bind/range) — Set 3c
 #include "storage/yaml/yaml_node.h" // YamlIdStr — reuse EdgeTX's own ModuleType table for authoritative labels
 #include "telemetry/telemetry.h"    // telemetryItems[] + isTelemetryFieldAvailable (docs/15)
+#include "telemetry/crossfire.h"    // MODULE_ADDRESS/COMMAND_ID — CRSF injection (ELRS tool, ADR-0021)
+#include "crc.h"                    // crc8 / crc8_BA for the CRSF output frame
 #include "audio.h"                  // AUDIO_FILENAME_MAXLEN + PLAY_* for the unified-audio tap (docs/ARCH §4)
 #include "storage/sdcard_common.h"  // getModelPath — BULK model-file pull (docs/protocol §8)
 #include "storage/sdcard_yaml.h"    // getModelNumberStr/MODELIDX_STRLEN — active model file (non-colorlcd)
@@ -1768,10 +1770,15 @@ static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg)
       uint8_t used = getMixCount();
       if (op == LIST_DELETE) { if (index>=used) return NACK_OUT_OF_RANGE; deleteMix((uint8_t)index); return 0; }
       if (used >= MAX_MIXERS) return NACK_OUT_OF_RANGE;
-      // insert on the SAME channel as the reference line (EdgeTX-like). APPEND goes to
-      // the last line's channel (or CH1 for an empty list).
+      // BUG-004 (structural, mixes): "＋ New mix" (APPEND) → a NEW channel (next after the last),
+      // consistent with "New input". Per-line "Insert after/before" still keep the ref line's channel
+      // (add a line within that channel, which mixes legitimately support).
       uint8_t at, ch;
-      if (op == LIST_APPEND) { at = used; ch = used ? g_model.mixData[used-1].destCh : 0; }
+      if (op == LIST_APPEND) {
+        at = used;
+        ch = used ? (uint8_t)(g_model.mixData[used-1].destCh + 1) : 0;
+        if (ch >= MAX_OUTPUT_CHANNELS) ch = (uint8_t)(MAX_OUTPUT_CHANNELS - 1);
+      }
       else {
         if (index >= used && used) return NACK_OUT_OF_RANGE;
         uint8_t ref = (used ? (index < used ? (uint8_t)index : (uint8_t)(used-1)) : 0);
@@ -1791,7 +1798,14 @@ static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg)
       if (used >= MAX_EXPOS) return NACK_OUT_OF_RANGE;
       // insert on the SAME input channel (chn) as the reference line.
       uint8_t at, chn;
-      if (op == LIST_APPEND) { at = used; chn = used ? g_model.expoData[used-1].chn : 0; }
+      // BUG-004: "＋ New input" (APPEND) must create a NEW input — the NEXT channel after the last —
+      // not another expo line on the last input (that produced IN6 nesting under IN5). INSERT/
+      // INSERT_AFTER (from a line's menu) still keep the ref line's chn = add a line within that input.
+      if (op == LIST_APPEND) {
+        at = used;
+        chn = used ? (uint8_t)(g_model.expoData[used-1].chn + 1) : 0;
+        if (chn >= MAX_INPUTS) chn = (uint8_t)(MAX_INPUTS - 1);
+      }
       else {
         if (index >= used && used) return NACK_OUT_OF_RANGE;
         uint8_t ref = (used ? (index < used ? (uint8_t)index : (uint8_t)(used-1)) : 0);
@@ -1967,12 +1981,38 @@ static void onFrame(const Message& m, void*)
     if (m.len >= 1) { s_uxOwner = (m.payload[0] != 0); uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
   }
   else if (m.type == MSG_TELEM_PUSH) {
-    // Inject a passthrough frame toward the RX (Lua sport/crossfireTelemetryPush). ATTACHED-gated.
-    // Round 1 (docs/32): the POP path (passive telemetry -> the app's Lua) is what iNav/Yaapu need
-    // to DISPLAY; frame INJECTION (polling) is a fast-follow (needs the SPort destination / CRSF
-    // output plumbing). We ACK with avail=0 so the app's push() returns false (best-effort; scripts
-    // retry) rather than believing a frame was sent.
-    uint8_t a[2] = { m.seq, 0 };
+    // Inject a passthrough frame toward the module (app Lua crossfireTelemetryPush). ADR-0021: enables
+    // interactive CRSF tools (ELRS) running in the app's Lua engine to configure the link. Payload is
+    // {u8 proto, u8 len, bytes[len]}; proto 2 = CRSF with bytes = [command, payload...]. We replicate
+    // EdgeTX's luaCrossfireTelemetryPush (api_general.cpp): frame into outputTelemetryBuffer + CRC(s) +
+    // destination. ACK byte = 1 if queued (push() returns true), else 0 (buffer busy / no CRSF module).
+    uint8_t ok = 0;
+    if (m.len >= 2) {
+      uint8_t proto = m.payload[0];
+      uint8_t n = m.payload[1];
+      const uint8_t* d = (m.len >= (uint16_t)(2 + n)) ? &m.payload[2] : nullptr;
+      if (proto == 2 && d && n >= 1) {
+        bool internal = isModuleCrossfire(INTERNAL_MODULE);
+        bool crsf = internal || isModuleCrossfire(EXTERNAL_MODULE);
+        if (crsf && outputTelemetryBuffer.isAvailable() && n <= TELEMETRY_OUTPUT_BUFFER_SIZE) {
+          uint8_t command = d[0];
+          uint8_t length  = (uint8_t)(n - 1);   // payload bytes after the command
+          outputTelemetryBuffer.pushByte(MODULE_ADDRESS);
+          outputTelemetryBuffer.pushByte((uint8_t)((command == COMMAND_ID ? 3 : 2) + length));
+          outputTelemetryBuffer.pushByte(command);
+          for (uint8_t i = 0; i < length; i++) outputTelemetryBuffer.pushByte(d[1 + i]);
+          if (command == COMMAND_ID) {
+            outputTelemetryBuffer.pushByte(crc8_BA(outputTelemetryBuffer.data + 2, 1 + length));
+            outputTelemetryBuffer.pushByte(crc8(outputTelemetryBuffer.data + 2, 2 + length));
+          } else {
+            outputTelemetryBuffer.pushByte(crc8(outputTelemetryBuffer.data + 2, 1 + length));
+          }
+          outputTelemetryBuffer.setDestination(internal ? 0 : TELEMETRY_ENDPOINT_SPORT);
+          ok = 1;
+        }
+      }
+    }
+    uint8_t a[2] = { m.seq, ok };
     emitMsg(MSG_ACK, a, 2);
   }
   else if (m.type == MSG_GET_PAGES) {
