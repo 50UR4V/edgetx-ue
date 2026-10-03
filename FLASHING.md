@@ -1,19 +1,21 @@
-# Flashing UltraEdge companion firmware — v1.0.1
+# Flashing UltraEdge companion firmware — v1.0.2
 
 These `.bin` files are **EdgeTX firmware with the UltraEdge companion overlay** built in. Flash the file
 that matches your radio, then pair it with the **UltraEdge** Android app over USB.
 
 > **Verified radios (this release):** RadioMaster **Pocket** (STM32F407), FrSky **QX7 / QX7 Access**
-> (STM32F205), and RadioMaster **TX16S** (STM32F407, color LCD). Other radios are **build-it-yourself**
-> for now — see `BUILD-HOWTO.md`. More prebuilt targets land here as each is verified on real hardware.
+> (STM32F205), and RadioMaster **TX16S** (STM32F407, color LCD). **Zorro** is included as an **unverified**
+> prebuilt (flash at your own risk). Other radios are **build-it-yourself** — see `BUILD-HOWTO.md`. More
+> prebuilt targets land here as each is verified on real hardware.
 
 | File | Radio | MCU | Notes |
 |---|---|---|---|
-| `edgetx-ue-radiomaster-pocket-v1.0.1.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
-| `edgetx-ue-frsky-qx7-v1.0.1.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
-| `edgetx-ue-radiomaster-tx16s-v1.0.1.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | First color-LCD target. Known: telemetry refresh slower than mono. |
+| `edgetx-ue-radiomaster-pocket-v1.0.2.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
+| `edgetx-ue-frsky-qx7-v1.0.2.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
+| `edgetx-ue-radiomaster-tx16s-v1.0.2.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | Color-LCD target. Known: telemetry refresh slower than mono. |
+| `edgetx-ue-radiomaster-zorro-v1.0.2.bin` | RadioMaster Zorro | STM32F407xE (512 KB) | ⚠️ **Unverified** — not checked on hardware. Flash at your own risk. |
 
-Firmware ↔ app compatibility: **UE Protocol v4** (matches UltraEdge app **v1.0.0**).
+Firmware ↔ app compatibility: **UE Protocol v4** (matches UltraEdge app **v1.0.7+**).
 Verify your download against `SHA256SUMS.txt`:
 
 ```bash

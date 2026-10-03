@@ -30,16 +30,17 @@ Grab the `.bin` for your radio from **[Releases](../../releases)**, then follow 
 |---|---|---|
 | RadioMaster **Pocket** | STM32F407 | ✅ Verified — prebuilt in Releases |
 | FrSky **QX7 / QX7 Access** | STM32F205 | ✅ Verified — prebuilt in Releases |
-| RadioMaster **TX16S** | STM32F407 (color LCD) | ✅ Verified (v1.0.1) — prebuilt in Releases |
-| RadioMaster **Zorro**, others | — | 🔜 Planned — **build it yourself** today ([`BUILD-HOWTO.md`](BUILD-HOWTO.md)) |
+| RadioMaster **TX16S** | STM32F407 (color LCD) | ✅ Verified — prebuilt in Releases |
+| RadioMaster **Zorro** | STM32F407xE | ⚠️ **Unverified** prebuilt in Releases (v1.0.2) — flash at your own risk |
+| Other radios | — | 🔧 **build it yourself** ([`BUILD-HOWTO.md`](BUILD-HOWTO.md)) |
 
-> TX16S is the first **color-LCD** target verified on hardware (v1.0.1). Other color-LCD/mono radios
-> (Zorro, …) build with the same flags but aren't hardware-verified yet — we add a radio to the prebuilt
-> list only after it's been built **and** checked on real hardware; no untested flight firmware ships here.
-> Want yours next? Build it with the how-to and report back in **[Issues](../../issues)**.
+> TX16S is the first **color-LCD** target verified on hardware. **Zorro** (v1.0.2) is provided as a
+> convenience prebuilt but is **not hardware-verified** — flash at your own risk and report back in
+> **[Issues](../../issues)**. We mark a radio ✅ Verified only after it's been built **and** checked on real
+> hardware; with no phone attached every build flies as stock EdgeTX.
 >
-> *Known on TX16S (v1.0.1): telemetry-screen refresh is slower than on mono; a config-screen "add input"
-> quirk — both tracked, neither affects flight (the radio flies as stock EdgeTX with no phone attached).*
+> *Known on TX16S (color LCD): telemetry-screen refresh is slower than on mono (tracked). It doesn't
+> affect flight.*
 
 ## Build it yourself
 See **[`BUILD-HOWTO.md`](BUILD-HOWTO.md)** for two paths:
@@ -49,8 +50,9 @@ See **[`BUILD-HOWTO.md`](BUILD-HOWTO.md)** for two paths:
 Both produce a `.bin` you flash exactly like the prebuilt ones.
 
 ## Compatibility
-This release speaks **UE Protocol v4** and pairs with **UltraEdge app v1.0.0**. Firmware and app negotiate
-the protocol version at connect; keep them on matching major releases.
+This release speaks **UE Protocol v4** and pairs with the **UltraEdge app v1.0.7+**. Firmware and app
+negotiate the protocol version at connect; keep them on matching major releases. v1.0.2 adds in-app Lua
+tools (e.g. ExpressLRS config) and fixes the input/mix "add" behaviour.
 
 ## Relationship to upstream EdgeTX
 This fork tracks a pinned EdgeTX base commit and adds one overlay: a self-contained
