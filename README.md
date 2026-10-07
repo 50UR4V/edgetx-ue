@@ -1,12 +1,16 @@
 # edgetx-ue — EdgeTX with the UltraEdge companion overlay
 
-**This is a fork of [EdgeTX](https://github.com/EdgeTX/edgetx) that adds the UltraEdge companion link.**
-With this firmware flashed, an EdgeTX radio can drive the **UltraEdge** Android app over USB — turning
-your phone into a big touchscreen for a radio that only has a small screen and a few buttons.
+**Keep the radio you love in your hands; let the interface, computing and RF evolve around it.**
+UltraEdge is building toward a modular radio control system, and this firmware is part of it: it adds the
+UltraEdge companion interface to [EdgeTX](https://github.com/EdgeTX/edgetx). It lets compatible companion
+software — today, the **UltraEdge** Android app over USB — exchange supported configuration, telemetry and
+tool requests, while **real-time control stays on the radio**.
 
-Your radio always flies on its own. The companion overlay is **dormant until a phone is plugged in** and
-is never in the flight-control path — unplug the phone and the radio behaves exactly like stock EdgeTX.
-When the companion is compiled out, the build is byte-for-byte identical to upstream EdgeTX.
+The companion overlay is **dormant until a phone is plugged in**. The companion does not run or schedule
+the radio's control loop, and if it is unplugged the radio keeps executing its active model; only companion
+display, telemetry, audio and tool sessions are lost. Note that the companion *can* change supported model
+and radio settings — those writes are validated and applied by the radio. When the companion is compiled
+out, the build is byte-for-byte identical to upstream EdgeTX.
 
 <p align="center"><img src="screenshots/UE_IMG3.jpeg" alt="Phone mounted on a RadioMaster Pocket running this firmware, showing a Lua telemetry screen" width="420"></p>
 
@@ -50,11 +54,19 @@ See **[`BUILD-HOWTO.md`](BUILD-HOWTO.md)** for two paths:
 Both produce a `.bin` you flash exactly like the prebuilt ones.
 
 ## Compatibility
-This release speaks **UE Protocol v4** and pairs with the **UltraEdge app v1.0.7+**. Firmware and app
-negotiate the protocol version at connect; keep them on matching major releases. v1.0.2 adds in-app Lua
+Release v1.0.2 (3 Oct 2026) speaks **UE Protocol v4** and pairs with the **UltraEdge app v1.0.7+**. Firmware and app
+negotiate the protocol version at connect; keep them on matching major releases. The v4 specification and reference
+codec are public in [UE Protocol](https://github.com/50UR4V/ue-protocol). v1.0.2 adds in-app Lua
 tools (e.g. ExpressLRS config) and fixes the input/mix "add" behaviour.
 
+## Where we're heading
+These are **future directions — not available today**: a replaceable control-processor daughterboard and
+other modular hardware *(future; designed toward long-term serviceability, no release date, no promise of
+permanent compatibility)*; opt-in cloud backup, map views and external digital-video display *(future,
+exploratory — DJI, Walksnail, OpenIPC and HDZero are research examples, not supported integrations)*.
+
 ## Relationship to upstream EdgeTX
+UltraEdge builds on what the EdgeTX community has made possible.
 This fork tracks a pinned EdgeTX base commit and adds one overlay: a self-contained
 `radio/src/thirdparty/ultraedge/` module plus small, `#if defined(USB_COMPANION)`-guarded hooks into
 audio, telemetry and USB. We intend to keep rebasing onto EdgeTX and to discuss upstreaming the hooks with
@@ -63,4 +75,5 @@ the EdgeTX team. This is a **community project and is not affiliated with or end
 ## License
 EdgeTX is licensed **GPL-3.0-or-later**; this fork is a derivative work and is distributed under the **same
 GPL-3.0** terms. The complete corresponding source — upstream EdgeTX history plus the UltraEdge overlay
-commit — is in this repository. See [`LICENSE`](LICENSE).
+commit — is in this repository. See [`LICENSE`](LICENSE). The UltraEdge app is proprietary and
+UE Protocol is open and will remain open source; both are separate from this firmware.
