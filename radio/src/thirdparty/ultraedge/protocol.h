@@ -31,7 +31,7 @@ namespace ultraedge {
 //   v3: named-value catalogs (docs/12) — T_REF fields carry a catalog id; the
 //       radio emits Source/Switch/Curve name catalogs (its own getSourceString
 //       etc.) so the phone shows real EdgeTX names in a picker, not raw indices.
-//   v4: Protocol V2 (docs/protocol/PROTOCOL-V2.md) — self-describing TYPED value
+//   v4: typed value model (docs/protocol/PROTOCOL-V4.md) — self-describing TYPED value
 //       model (one telemetry frame carries every value kind: scalar/text/gps/
 //       datetime/cells/…), feature-bit capability negotiation via Hello.caps, and
 //       (later phases) EVENT class, BULK transfer, model-file pull/push. Gated by
@@ -127,7 +127,7 @@ enum MsgType : uint8_t {
   MSG_CAL_LIVE = 0x42, // radio->phone: {u8 count, i16[count] raw}  live analog values during calibration
   MSG_MOD_ACTION = 0x43, // phone->radio: {u8 module, u8 action}  0=normal/stop 1=bind 2=range (Set 3c). GATED.
 
-  // ---- V2 BULK transfer + model file (docs/protocol/PROTOCOL-V2.md §8-9) -----
+  // ---- V2 BULK transfer + model file (docs/protocol/PROTOCOL-V4.md §8-9) -----
   // Reliable, chunked transfer for anything bigger than one payload: model/radio YAML (source of
   // truth), later bitmaps/logs. Paced by the BULK byte budget so it can't starve telemetry. On a
   // reliable CDC link we stream + verify a whole-transfer CRC32 at END; a mismatch → app re-pulls.
@@ -210,7 +210,7 @@ enum StreamId : uint8_t {
   STREAM_SOURCES   = 6, // live input sources: sticks/pots/switches (docs/37) — for getValue('thr'…) + auto-select
 };
 
-// ---- Typed value model (Protocol V2, docs/protocol/PROTOCOL-V2.md §5) --------
+// ---- Typed value model (UE Protocol v4, docs/protocol/PROTOCOL-V4.md §5) --------
 // Every live value is TYPED so the app decodes by kind with ONE decoder — instead of "scalar + a
 // special message per exception" (the GPS/text/cells/datetime bug family). The telemetry CATALOG
 // (MSG_TELECAT) carries value_kind per sensor; the value frame carries {id, len, payload} where
@@ -472,7 +472,7 @@ enum NackReason : uint8_t {
 // ---- Roles & capability bits ------------------------------------------------
 enum Role : uint8_t { ROLE_RADIO = 0, ROLE_PHONE = 1 };
 
-// Capability/feature bits, exchanged in Hello.caps (docs/protocol/PROTOCOL-V2.md §3.1). Each optional
+// Capability/feature bits, exchanged in Hello.caps (docs/protocol/PROTOCOL-V4.md §3.1). Each optional
 // capability is a bit so features ship independently without a version cliff; a peer uses only the
 // INTERSECTION of both sides' bits. proto_ver is the wire major; caps is the feature negotiation.
 enum Caps : uint32_t {

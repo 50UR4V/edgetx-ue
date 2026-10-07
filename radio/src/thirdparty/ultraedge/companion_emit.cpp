@@ -1230,7 +1230,7 @@ static volatile uint16_t s_rxTail = 0;   // read by main (consumer)
 extern void (*usbSerialGetReceiveDataCb(void))(uint8_t*, uint32_t);
 static void (*s_prevRxCb)(uint8_t*, uint32_t) = nullptr;   // stock consumer to forward to
 static volatile bool s_companionActive = false;            // set true once HELLO is sniffed
-// Negotiated peer capabilities (docs/protocol/PROTOCOL-V2.md §3.1), from the app's HELLO. Feature
+// Negotiated peer capabilities (docs/protocol/PROTOCOL-V4.md §3.1), from the app's HELLO. Feature
 // emit is gated on the INTERSECTION of what this build supports and what the app advertised, so a
 // v3 (no-caps) app still gets the legacy wire. This build's own advertised caps:
 static const uint32_t UE_LOCAL_CAPS = CAP_STRUCTURED | CAP_AUDIO | CAP_TELEM_TYPED | CAP_MODEL_FILE | CAP_CALIB;
@@ -1286,7 +1286,7 @@ static inline uint8_t ueValueKind(uint8_t unit) {
   }
 }
 
-// ---- V2 BULK transfer: model-file pull (docs/protocol/PROTOCOL-V2.md §8-9) --------------------
+// ---- V2 BULK transfer: model-file pull (docs/protocol/PROTOCOL-V4.md §8-9) --------------------
 // Streams the active model /MODELS/<curr>.yml to the app as the source of truth. Chunked across ticks
 // (small SD reads, paced by the class-2 byte budget) so it never blocks the main context for long or
 // starves live telemetry. Whole-file CRC32 goes in BULK_END; a mismatch → the app re-pulls.
@@ -2253,7 +2253,7 @@ extern "C" void ultraedgeCompanionTick()
       // correct fix for "late sensors never sent" but capped each sensor's refresh at ~rate/ceil(n/10)
       // — e.g. attitude at ~1.6 Hz with 24 sensors. Now every sensor updates at the full frame rate.
       if (peerHasTypedTelem()) {
-        // ---- V2 TYPED telemetry (docs/protocol/PROTOCOL-V2.md §5) --------------------------------
+        // ---- V2 TYPED telemetry (docs/protocol/PROTOCOL-V4.md §5) --------------------------------
         // ONE frame carries every value kind: {u8 count, [u16 id, u8 kind, u8 len, payload]}. This
         // subsumes the old scalar MSG_TELEMETRY + the GPS/text MSG_TELEMETRY2 bolt-on. The app decodes
         // by kind → scalar / gps table / text / cells / datetime, with no per-kind message.
