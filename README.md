@@ -27,10 +27,20 @@ out, the build is byte-for-byte identical to upstream EdgeTX.
 - 📖 **App home / manual / support:** https://github.com/50UR4V/UltraEdge-app
 - 🖨️ **3D-printable phone mounts:** https://github.com/50UR4V/ultraedge-mounts
 
+## Versions at a glance
+| | Version | Where |
+|---|---|---|
+| **Latest prebuilt release** | **v1.0.2** (3 Oct 2026) | **[Releases](../../releases)** — the recommended download |
+| **Source on this branch** | **1.1.1** (development, pre-release) | this repository — build it yourself ([`BUILD-HOWTO.md`](BUILD-HOWTO.md)) |
+
+1.1.1 builds for Pocket, QX7 and TX16S but has **not yet been signed off on hardware as a release**, and has
+no prebuilt `.bin` yet. If you just want to fly with the app, use the v1.0.2 release.
+
 ## Prebuilt firmware (download & flash)
 Grab the `.bin` for your radio from **[Releases](../../releases)**, then follow [`FLASHING.md`](FLASHING.md).
+The statuses below are for the **v1.0.2** release.
 
-| Radio | MCU | Status |
+| Radio | MCU | Status (v1.0.2) |
 |---|---|---|
 | RadioMaster **Pocket** | STM32F407 | ✅ Verified — prebuilt in Releases |
 | FrSky **QX7 / QX7 Access** | STM32F205 | ✅ Verified — prebuilt in Releases |
@@ -54,10 +64,18 @@ See **[`BUILD-HOWTO.md`](BUILD-HOWTO.md)** for two paths:
 Both produce a `.bin` you flash exactly like the prebuilt ones.
 
 ## Compatibility
-Release v1.0.2 (3 Oct 2026) speaks **UE Protocol v4** and pairs with the **UltraEdge app v1.0.7+**. Firmware and app
-negotiate the protocol version at connect; keep them on matching major releases. The v4 specification and reference
-codec are public in [UE Protocol](https://github.com/50UR4V/ue-protocol). v1.0.2 adds in-app Lua
-tools (e.g. ExpressLRS config) and fixes the input/mix "add" behaviour.
+Both v1.0.2 and 1.1.1 speak **UE Protocol v4**. Firmware and app negotiate the protocol version at connect;
+the v4 specification and reference codec are public in [UE Protocol](https://github.com/50UR4V/ue-protocol).
+
+- **v1.0.2** (release) pairs with the **UltraEdge app v1.0.7+**. It adds in-app Lua tools (e.g. ExpressLRS
+  config) and fixes the input/mix "add" behaviour.
+- **1.1.1** (source on this branch) is developed alongside **UltraEdge app 1.2.10**; its newer features
+  need an app build at that level or later. Compared with v1.0.2 it adds:
+  - **Trainer** settings editable from the phone.
+  - **Manage Models** from the phone — select, copy and delete models on the radio.
+  - **Restore** a model from the phone's backup library back onto the radio.
+  - **Physical stick and switch positions** for the app's channel monitor, labelled for your stick mode.
+  - Fixes to model copy and to keeping the app in step after a model change.
 
 ## Where we're heading
 These are **future directions — not available today**: a replaceable control-processor daughterboard and
