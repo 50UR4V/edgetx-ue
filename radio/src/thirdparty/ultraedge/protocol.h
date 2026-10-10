@@ -116,6 +116,12 @@ enum MsgType : uint8_t {
                           // app re-describes the list, or NACK on range/duplicate error.
 
   MSG_GET_TELECAT = 0x3C, // phone->radio: request the telemetry sensor catalog (docs/15)
+  MSG_TELE_DISCOVER = 0x44, // phone->radio: {u8 on} drive EdgeTX's own sensor discovery
+                          //   (allowNewSensors) so found sensors register into the model + persist,
+                          //   like the radio's Telemetry menu. ATTACHED-gated. (Bug-1, s11)
+  MSG_SD_LIST      = 0x45, // phone->radio: {u8 pathLen, path} list a directory (e.g. /LOGS)   (FL-1, s12)
+  MSG_SD_LIST_RESP = 0x46, // radio->phone: {u8 count, [u32 size, u8 nameLen, name]}            (FL-1, s12)
+  MSG_SD_PULL      = 0x47, // phone->radio: {u8 pathLen, path} stream that SD file via BULK(kind=LOG) (FL-1)
   MSG_TELECAT     = 0x3D, // radio->phone. V2: {u8 count, [u16 id, u8 value_kind, u8 unit, u8 prec,
                           //   u8 nameLen, name]} — value_kind (ValueKind) added so the app knows each
                           //   sensor's shape. Legacy (v3): no value_kind byte. id = sensor index. The
@@ -148,6 +154,11 @@ enum MsgType : uint8_t {
   MSG_MODEL_PUSH_END   = 0x68, // phone->radio: {u16 xfer_id}  -> radio verifies + commits (or aborts)
   MSG_MODEL_PUSH_ACK   = 0x69, // radio->phone: {u16 xfer_id, u8 status}  status 0=committed, else NackReason
 
+  // Set 6 — model radio-ops (ADR-0025). ATTACHED-gated; ACK {ref_seq} / NACK {ref_seq, reason}. No PROTO bump.
+  MSG_MODEL_SELECT = 0x6A, // phone->radio: {u8 nameLen, filename}  switch active model (native safety-gate)
+  MSG_MODEL_COPY   = 0x6B, // phone->radio: {u8 nameLen, filename}  duplicate that model (auto-named copy)
+  MSG_MODEL_DELETE = 0x6C, // phone->radio: {u8 nameLen, filename}  delete that model (refused if active)
+
   MSG_ACK         = 0x70, // {ref_seq(1)}
   MSG_NACK        = 0x71, // {ref_seq(1), reason(1)}
 };
@@ -158,6 +169,7 @@ enum BulkKind : uint8_t {
   BULK_RADIO_YAML = 2,   // radio.yml
   BULK_BITMAP     = 3,   // model image (future)
   BULK_LOG        = 4,   // SD log (future)
+  BULK_MODEL_NEW  = 5,   // ADR-0027: MODEL_PUSH restores a NEW model file (not the active-model overwrite)
 };
 
 // ---- MSG_AUDIO payload kinds (P2 unified audio, docs/ARCH §4) ---------------
@@ -286,6 +298,8 @@ enum ConfigField : uint16_t {
   CFG_GEN_WARN_ALARM =46,  // T_BOOL  disableAlarmWarning
   CFG_GEN_WARN_RSSI  =47,  // T_BOOL  disableRssiPoweroffAlarm
   CFG_GEN_ALARMS_FLASH=48, // T_BOOL  alarmsFlash
+  CFG_GEN_TRN_MODE   =49,  // T_ENUM  g_model.trainerData.mode (TrainerMode 0..9) — future MODEL trainer page
+  CFG_GEN_TRN_CALIB  =50,  // write-trigger: snapshot trainerInput[] -> g_eeGeneral.trainer.calib[] (EdgeTX "Cal")
 
   // ---- Outputs (docs/10) --------------------------------------------------
   // Per-channel detail field id = CFG_OUT_BASE | (channel<<4) | OutSub.
@@ -315,11 +329,15 @@ enum ConfigField : uint16_t {
   CFG_TELEM_BASE    = 0x8000,   // Telemetry sensors (MAX_TELEMETRY_SENSORS; wider span)
   CFG_SWNAME_BASE   = 0xA000,   // Set 3b: per-physical-switch custom name; id = base + switchIndex
   CFG_MOD_BASE      = 0xB000,   // Set 3c: per-module RF config; id = base | (module<<4) | ModSub
+  CFG_TRN_BASE      = 0xC000,   // Set 5: per-channel trainer mix; id = base | (channel<<4) | TrnSub
 };
 // Model Setup section rows (each opens a sub-page of existing model fields).
 enum SecRow : uint8_t { SEC_TRIMS = 0, SEC_THROTTLE = 1, SEC_OTHER = 2, SEC_RF_INT = 3, SEC_RF_EXT = 4 };
 // Set 3c — per-module RF config: detail field id = CFG_MOD_BASE | (module<<4) | ModSub.
 enum ModSub : uint8_t { MOD_TYPE = 0, MOD_CHANNELS = 1, MOD_CHSTART = 2, MOD_FAILSAFE = 3 };
+
+// Set 5 — per-channel trainer mix: detail field id = CFG_TRN_BASE | (channel<<4) | TrnSub.
+enum TrnSub : uint8_t { TRN_SRC = 0, TRN_MUX = 1, TRN_WEIGHT = 2 };
 
 // Per-item id layout (docs/11).
 static const uint16_t ITEM_STRIDE = 0x20;   // ids reserved per list item
@@ -399,7 +417,10 @@ enum CapKey : uint8_t {
 //   target detail page, but its CONFIG_VALUE is a LINE BLOB the app formats itself:
 //   {i16 src, i16 weight, i8 mplex(-1 if n/a), i16 swtch, i16 curve, u8 active,
 //    u8 nameLen, char name[]}. Keeps app-owned naming (source/switch/curve).
-enum RowKind : uint8_t { ROW_FIELD = 0, ROW_LINK = 1, ROW_HEADER = 2, ROW_LINE = 3 };
+// ROW_TRN    = a trainer stick row (Set 5): opts carry the multiplex modes, vmin..vmax the source-channel
+//              range; the app renders [stick label | mode | source | weight] inline and derives the three
+//              editable ids from the row id (CFG_TRN_BASE|stick<<4) | {TRN_MUX,TRN_SRC,TRN_WEIGHT}.
+enum RowKind : uint8_t { ROW_FIELD = 0, ROW_LINK = 1, ROW_HEADER = 2, ROW_LINE = 3, ROW_TRN = 4 };
 
 // Icon ids (v2). Mirror EdgeTX colorlcd icons (radio/src/bitmaps/800x480 masks);
 // the app carries the matching tinted glyphs. 0 = none.
@@ -426,6 +447,7 @@ enum ConfigPage : uint16_t {
   PAGE_RADIO_SETUP = 0x0010,  // form: editable g_eeGeneral scalars (PRD-radio-settings Set 2)
   PAGE_RADIO_HW    = 0x0011,  // form: hardware / connectivity / warnings (Set 3)
   PAGE_RADIO_SWITCHES = 0x0012, // form: name each physical switch (Set 3b)
+  PAGE_RADIO_TRAINER  = 0x0013, // form: trainer mode + per-channel mix (Set 5)
   PAGE_MOD_BASE    = 0x0E00,  // + module(0/1): RF detail form — type/channels/failsafe + bind (Set 3c)
 
   PAGE_TIMER_BASE  = 0x0100,  // + timer(0..2): timer detail form
@@ -467,6 +489,10 @@ enum NackReason : uint8_t {
   NACK_PUSH_IO    = 7,    // SD open/write/rename failed
   NACK_PUSH_CRC   = 8,    // whole-file CRC16 or length mismatch at END
   NACK_PUSH_MODEL = 9,    // BEGIN's filename isn't the active model (model switched since the pull)
+  // Set 6 model radio-ops (ADR-0025)
+  NACK_UNSAFE     = 10,   // model SELECT refused — throttle not idle / switch warnings (flight-safety gate)
+  NACK_NOT_FOUND  = 11,   // named model file not found on the radio
+  NACK_ACTIVE     = 12,   // refused: that's the active model (can't delete the one in use)
 };
 
 // ---- Roles & capability bits ------------------------------------------------

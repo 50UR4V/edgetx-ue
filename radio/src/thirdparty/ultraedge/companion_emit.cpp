@@ -25,6 +25,8 @@
 #include "mixes.h"                  // insertMix/deleteMix for list edits (docs/13)
 #include "curves.h"                 // curveAddress/getCurvePoints for the graph editor (docs/13)
 #include "input_mapping.h"          // inputMappingConvertMode/GetThrottle — Home trim/stick slots (docs/13)
+#include "strhelpers.h"             // getMainControlLabel — trainer stick names (Set 5)
+#include "trainer.h"                // trainerInput[] — trainer calibration snapshot (Set 5)
 #include "hal/adc_driver.h"         // ADC_MAIN_LH/LV/RV/RH physical stick slot indices (docs/13)
 #include "hal/switch_driver.h"      // switchGetMaxSwitches / switchGetDefaultName — Set 3b switch naming
 #include "pulses/pulses_common.h"   // setModuleMode (bind/range) — Set 3c
@@ -37,6 +39,8 @@
 #include "storage/sdcard_yaml.h"    // getModelNumberStr/MODELIDX_STRLEN — active model file (non-colorlcd)
 #if defined(STORAGE_MODELSLIST)
 #include "storage/modelslist.h"     // modelslist.getCurrentModel()->modelFilename (colorlcd)
+#include "layout.h"                 // LayoutFactory — custom-screen teardown/reload on model SELECT (Set 6)
+#include "mainwindow.h"             // MainWindow::instance()->enableWidgetRefresh — pause refresh during switch
 #endif
 #include "protocol.h"
 
@@ -179,6 +183,31 @@ static size_t cfgGetTimer(uint16_t id, uint8_t* out) {
   }
 }
 
+// ---- Set 5 trainer per-channel mix: id = CFG_TRN_BASE | (channel<<4) | TrnSub ----
+static inline uint8_t trnCh(uint16_t id)  { return (uint8_t)((id >> 4) & 0x0F); }
+static inline uint8_t trnSub(uint16_t id) { return (uint8_t)(id & 0x0F); }
+static size_t cfgGetTrainer(uint16_t id, uint8_t* out) {
+  uint8_t ch = trnCh(id), sub = trnSub(id);
+  if (ch >= 4) return 0;
+  TrainerMix* m = &g_eeGeneral.trainer.mix[ch];
+  switch (sub) {
+    case TRN_SRC:    { uint8_t b = (uint8_t)(m->srcChn & 0x03); return cfgValuePayload(id, T_ENUM, &b, 1, out); }  // 0..3 = CH1..CH4
+    case TRN_MUX:    { uint8_t b = (uint8_t)(m->mode & 0x03); if (b > 2) b = 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
+    case TRN_WEIGHT: { int16_t v = (int16_t)m->studWeight; uint8_t b[2] = {(uint8_t)(v&0xFF),(uint8_t)((v>>8)&0xFF)}; return cfgValuePayload(id, T_I16, b, 2, out); }
+    default: return 0;
+  }
+}
+static uint8_t cfgSetTrainer(uint16_t id, uint8_t type, const uint8_t* data, uint8_t len) {
+  uint8_t ch = trnCh(id), sub = trnSub(id);
+  if (ch >= 4) return NACK_UNKNOWN_FIELD;
+  TrainerMix* m = &g_eeGeneral.trainer.mix[ch];
+  switch (sub) {
+    case TRN_SRC:    { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 3) return NACK_OUT_OF_RANGE; m->srcChn = data[0]; storageDirty(EE_GENERAL); return 0; }  // 0..3 = CH1..CH4
+    case TRN_MUX:    { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 2) return NACK_OUT_OF_RANGE; m->mode = data[0]; storageDirty(EE_GENERAL); return 0; }
+    case TRN_WEIGHT: { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v = (int16_t)(data[0]|(data[1]<<8)); if (v < -125 || v > 125) return NACK_OUT_OF_RANGE; m->studWeight = (int8_t)v; storageDirty(EE_GENERAL); return 0; }
+    default: return NACK_UNKNOWN_FIELD;
+  }
+}
 static uint8_t cfgSetTimer(uint16_t id, uint8_t type, const uint8_t* data, uint8_t len) {
   uint8_t k = tmrIndex(id); uint8_t sub = tmrSub(id);
   if (k >= NUM_TIMERS) return NACK_UNKNOWN_FIELD;
@@ -626,6 +655,7 @@ static size_t cfgGet(uint16_t id, uint8_t* out) {
     case CFG_GEN_TIMEZONE:   { int16_t v=(int16_t)g_eeGeneral.timezone; uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)((v>>8)&0xFF)}; return cfgValuePayload(id, T_I16, b, 2, out); }
     case CFG_GEN_ADJUST_RTC: { uint8_t b = g_eeGeneral.adjustRTC ? 1 : 0; return cfgValuePayload(id, T_BOOL, &b, 1, out); }
     case CFG_GEN_UNITS:      { uint8_t b = g_eeGeneral.imperial ? 1 : 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
+    case CFG_GEN_TRN_MODE:   { uint8_t b = (uint8_t)g_model.trainerData.mode; if (b > 9) b = 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case CFG_GEN_GPS_FORMAT: { uint8_t b = (uint8_t)g_eeGeneral.gpsFormat; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case CFG_GEN_USB_MODE:   { uint8_t b = (uint8_t)g_eeGeneral.USBMode; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case CFG_GEN_JACK_MODE:  { uint8_t b = (uint8_t)g_eeGeneral.jackMode; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
@@ -659,6 +689,7 @@ static size_t cfgGet(uint16_t id, uint8_t* out) {
         return vStr(id, g_eeGeneral.switchConfig[i].name, LEN_SWITCH_NAME, out);
       }
       if (id >= CFG_MOD_BASE && id < CFG_MOD_BASE + (NUM_MODULES << 4)) return modGet(id, out);  // Set 3c
+      if (id >= CFG_TRN_BASE)     return cfgGetTrainer(id, out);   // Set 5 trainer (0xC000 — above CFG_INPUT)
       if (id >= CFG_INPUT_BASE)   return subsystemGet(id, out);
       if (id >= CFG_SECROW_BASE) return sectionRowSummary(id, out);
       if (id >= CFG_TMRROW_BASE)  return timerRowSummary(id, out);
@@ -712,6 +743,8 @@ static uint8_t cfgSet(uint16_t id, uint8_t type, const uint8_t* data, uint8_t le
     case CFG_GEN_TIMEZONE:   { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v=(int16_t)(data[0]|(data[1]<<8)); if (v < -16 || v > 15) return NACK_OUT_OF_RANGE; g_eeGeneral.timezone = (int8_t)v; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_ADJUST_RTC: { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_eeGeneral.adjustRTC = data[0] ? 1 : 0; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_UNITS:      { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 1) return NACK_OUT_OF_RANGE; g_eeGeneral.imperial = data[0]; storageDirty(EE_GENERAL); return 0; }
+    case CFG_GEN_TRN_MODE:   { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 9) return NACK_OUT_OF_RANGE; g_model.trainerData.mode = data[0]; storageDirty(EE_MODEL); return 0; }
+    case CFG_GEN_TRN_CALIB:  { memcpy(g_eeGeneral.trainer.calib, trainerInput, sizeof(g_eeGeneral.trainer.calib)); storageDirty(EE_GENERAL); return 0; }  // EdgeTX "Cal": snapshot live trainer input as centre
     case CFG_GEN_GPS_FORMAT: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 1) return NACK_OUT_OF_RANGE; g_eeGeneral.gpsFormat = data[0]; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_USB_MODE:   { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 3) return NACK_OUT_OF_RANGE; g_eeGeneral.USBMode = data[0]; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_JACK_MODE:  { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 2) return NACK_OUT_OF_RANGE; g_eeGeneral.jackMode = data[0]; storageDirty(EE_GENERAL); return 0; }
@@ -747,6 +780,7 @@ static uint8_t cfgSet(uint16_t id, uint8_t type, const uint8_t* data, uint8_t le
         return rc;
       }
       if (id >= CFG_MOD_BASE && id < CFG_MOD_BASE + (NUM_MODULES << 4)) return modSet(id, type, data, len);  // Set 3c
+      if (id >= CFG_TRN_BASE)     return cfgSetTrainer(id, type, data, len);   // Set 5 trainer (above CFG_INPUT)
       if (id >= CFG_INPUT_BASE)   return subsystemSet(id, type, data, len);
       if (id >= CFG_SECROW_BASE) return NACK_UNKNOWN_FIELD;      // link rows are read-only
       if (id >= CFG_TMRROW_BASE)  return NACK_UNKNOWN_FIELD;
@@ -778,6 +812,10 @@ static const char* const OPTS_FILTER[]      = { "Global","Off","On" };
 static const char* const OPTS_SUBTRIMMODE[] = { "Center","Symmetric" };
 static const char* const OPTS_COUNTDOWN[]   = { "Silent","Beeps","Voice","Haptic" };
 static const char* const OPTS_TIMERDIR[]    = { "Remain","Elapsed" };
+// Set 5 Trainer (radio trainer page): per-stick multiplex mode. Replicates EdgeTX STR_TRNMODE
+// (radio/src/gui/colorlcd/radio/radio_trainer.cpp). Module mode (master/slave/jack) lives on the
+// MODEL trainer page in EdgeTX and is not shown here; CFG_GEN_TRN_MODE stays defined for that future page.
+static const char* const OPTS_TRNMUX[]       = { "Off","+=","Replace" };
 // Radio-settings enums (PRD-radio-settings Set 2). Labels are cosmetic — the WRITTEN value is the index,
 // which maps to g_eeGeneral's raw enum, so a mislabel is display-only, never corruption.
 static const char* const OPTS_BLMODE[]      = { "Off","Keys","Sticks","All","On" };
@@ -1182,6 +1220,22 @@ static bool pageRow(uint16_t page, uint16_t idx, RowDef& r, char* buf) {
       mkField(r, (uint16_t)(CFG_SWNAME_BASE + idx), T_STR, 0, LEN_SWITCH_NAME, 1,
               switchGetDefaultName(idx), "", nullptr, 0, IC_NONE);
       return true;
+
+    case PAGE_RADIO_TRAINER: {   // Set 5: EdgeTX radio trainer page — per-stick [mode|source|weight] table
+      // Replicates radio/src/gui/colorlcd/radio/radio_trainer.cpp: one row per main stick, labelled by the
+      // stick's control (Ail/Ele/Thr/Rud, stick-mode aware), each carrying the multiplex mode, the source
+      // trainer channel (CH1..CH4) and the student weight. Module mode (master/slave/jack) is the MODEL
+      // trainer page in EdgeTX, not shown here. Calibration is an action button added app-side.
+      uint8_t nSticks = adcGetMaxInputs(ADC_INPUT_MAIN); if (nSticks > 4) nSticks = 4;   // trainer.mix[4]
+      if (idx >= nSticks) return false;
+      uint8_t ch = inputMappingChannelOrder(idx);              // display order -> mix[] index
+      uint16_t fid = (uint16_t)(CFG_TRN_BASE | (ch << 4));     // base id; app derives |TRN_{MUX,SRC,WEIGHT}
+      const char* lbl = getMainControlLabel(ch);               // "Ail"/"Ele"/"Thr"/"Rud"
+      // ROW_TRN: opts = multiplex modes (Off/+=/Replace); vmin..vmax = source-channel range (0..3 = CH1..CH4).
+      mkField(r, fid, T_ENUM, 0, 3, 1, lbl ? lbl : "", "%", OPTS_TRNMUX, 3, IC_NONE);
+      r.kind = ROW_TRN;
+      return true;
+    }
     // ---- per-item list pages (docs/11): one LINK row per item ----
     // Inputs/Mixes are channel/input-grouped EdgeTX-style (docs/14): interleaved
     // HEADER + LINE rows, used items only.
@@ -1346,6 +1400,25 @@ static void ueStartModelPull(uint8_t which) {
   emitMsg(MSG_BULK_BEGIN, p, (uint16_t)o);
 }
 
+// FL-1 (s12): stream an ARBITRARY SD file (e.g. a /LOGS/*.csv) to the app over the same paced BULK
+// machinery as the model pull — reused verbatim (the tick reads whatever s_bulkFile is open). Read-only.
+static void ueStartFilePull(const char* path, const char* name, uint8_t kind) {
+  if (s_bulkActive) { f_close(&s_bulkFile); s_bulkActive = false; }
+  if (f_open(&s_bulkFile, path, FA_OPEN_EXISTING | FA_READ) != FR_OK) {
+    uint8_t ab[3] = { (uint8_t)(s_bulkXferId & 0xFF), (uint8_t)(s_bulkXferId >> 8), 1 /*open failed*/ };
+    emitMsg(MSG_BULK_ABORT, ab, sizeof(ab)); return;
+  }
+  s_bulkTotal = (uint32_t)f_size(&s_bulkFile);
+  s_bulkOffset = 0; s_bulkCrc = 0xFFFF; s_bulkKind = kind; s_bulkXferId++; s_bulkActive = true;
+  uint8_t p[2 + 1 + 4 + 1 + 64]; size_t o = 0;
+  p[o++] = s_bulkXferId & 0xFF; p[o++] = (s_bulkXferId >> 8) & 0xFF;
+  p[o++] = s_bulkKind;
+  p[o++] = s_bulkTotal & 0xFF; p[o++] = (s_bulkTotal>>8)&0xFF; p[o++] = (s_bulkTotal>>16)&0xFF; p[o++] = (s_bulkTotal>>24)&0xFF;
+  uint8_t nl = 0; while (nl < 48 && name[nl]) nl++;
+  p[o++] = nl; for (uint8_t k = 0; k < nl; ++k) p[o++] = (uint8_t)name[k];
+  emitMsg(MSG_BULK_BEGIN, p, (uint16_t)o);
+}
+
 // USB-interrupt context: keep it tiny — enqueue to our ring, and while we are NOT yet the
 // owner of the link, also pass the bytes through to the stock consumer so plain Serial
 // (CLI etc.) keeps working until a host explicitly opts in with a HELLO.
@@ -1378,10 +1451,48 @@ static uint16_t s_pushXferId = 0;
 static uint32_t s_pushOffset = 0, s_pushTotal = 0;
 static uint16_t s_pushCrc = 0xFFFF, s_pushExpCrc = 0;
 static char     s_pushFn[LEN_MODEL_FILENAME + 1];
+static bool     s_pushIsNew = false;   // ADR-0027: restore (write a NEW model) vs active-model save
+
+#if !defined(STORAGE_MODELSLIST)
+static int ueModelIdxFromName(const char* fn);   // defined with the mono model-ops below
+static int ueNextFreeModelIdx();
+void loadModelHeader(uint8_t id, ModelHeader* header);   // storage.h (fwd-declared to avoid include churn)
+#endif
 
 static void ueModelPushAck(uint16_t xfer, uint8_t status) {
   uint8_t p[3] = { (uint8_t)(xfer & 0xFF), (uint8_t)(xfer >> 8), status };
   emitMsg(MSG_MODEL_PUSH_ACK, p, sizeof(p));
+}
+// ADR-0027: a restore's success ACK carries the final filename the radio chose, so the app can reconcile
+// when the requested slot was taken and a fresh one was used: {u16 xfer, u8 status, u8 nameLen, name}.
+static void ueModelPushAckNamed(uint16_t xfer, uint8_t status, const char* fn) {
+  uint8_t p[4 + LEN_MODEL_FILENAME + 1];
+  p[0] = (uint8_t)(xfer & 0xFF); p[1] = (uint8_t)(xfer >> 8); p[2] = status;
+  uint8_t nl = 0; if (fn) while (fn[nl] && nl < LEN_MODEL_FILENAME) nl++;
+  p[3] = nl; for (uint8_t i = 0; i < nl; ++i) p[4 + i] = (uint8_t)fn[i];
+  emitMsg(MSG_MODEL_PUSH_ACK, p, (uint16_t)(4 + nl));
+}
+
+// ADR-0027: choose the restore target filename — the requested name if that slot is free, else the next
+// free slot. Never overwrites an existing model. Writes "" to [out] if no free slot exists.
+static void ueChooseRestoreTarget(const char* reqName, char* out) {
+  out[0] = 0;
+#if defined(STORAGE_MODELSLIST)
+  char path[64]; FILINFO fno;
+  getModelPath(path, reqName);
+  if (f_stat(path, &fno) != FR_OK) {                        // requested slot free -> use it
+    uint8_t i = 0; for (; i < LEN_MODEL_FILENAME && reqName[i]; ++i) out[i] = reqName[i]; out[i] = 0; return;
+  }
+  char cand[LEN_MODEL_FILENAME + 1]; strcpy(cand, MODEL_FILENAME_PATTERN);   // taken -> next free modelNN.yml
+  if (findNextFileIndex(cand, LEN_MODEL_FILENAME, MODELS_PATH)) strcpy(out, cand);
+#else
+  int reqIdx = ueModelIdxFromName(reqName);
+  int idx = (reqIdx >= 0 && !modelExists((uint8_t)reqIdx)) ? reqIdx : ueNextFreeModelIdx();
+  if (idx < 0) return;
+  char numstr[MODELIDX_STRLEN]; getModelNumberStr((uint8_t)idx, numstr);
+  uint8_t i = 0; for (; numstr[i]; ++i) out[i] = numstr[i];
+  const char* suf = MODEL_FILENAME_SUFFIX; uint8_t j = 0; for (; suf[j]; ++j) out[i + j] = suf[j]; out[i + j] = 0;
+#endif
 }
 
 // Abandon an in-flight push and discard the temp file — the live model is never touched here.
@@ -1409,19 +1520,30 @@ static void ueModelPushBegin(const Message& m) {
   uint32_t total = (uint32_t)m.payload[3] | ((uint32_t)m.payload[4]<<8) | ((uint32_t)m.payload[5]<<16) | ((uint32_t)m.payload[6]<<24);
   uint16_t expcrc = (uint16_t)(m.payload[7] | (m.payload[8] << 8));
   if (!s_link.companionInputAllowed()) { ueModelPushAck(xfer, NACK_NOT_ATTACHED); return; }
-  if (kind != BULK_MODEL_YAML)         { ueModelPushAck(xfer, NACK_PUSH_STATE);   return; }  // MVP: model only
+  if (kind != BULK_MODEL_YAML && kind != BULK_MODEL_NEW) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
   if (s_pushActive) ueModelPushDiscard();                                                     // supersede
-  char fnbuf[MODELIDX_STRLEN + sizeof(MODEL_FILENAME_SUFFIX) + 2];
-  const char* fn = ueActiveModelFn(fnbuf);
-  if (!fn || !fn[0]) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
-  // The app names the model file it pulled; refuse unless that is still the active model, so a model
-  // switch on the radio between pull and save can never overwrite the wrong model.
+  // Read the app-supplied filename (BULK_MODEL_YAML: must equal the active model; BULK_MODEL_NEW: desired slot).
   uint8_t nl = m.payload[9];
-  if (nl == 0 || (uint32_t)(10 + nl) > m.len || strlen(fn) != nl || memcmp(fn, m.payload + 10, nl) != 0) {
-    ueModelPushAck(xfer, NACK_PUSH_MODEL); return;
+  if (nl == 0 || (uint32_t)(10 + nl) > m.len || nl > LEN_MODEL_FILENAME) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
+  char reqName[LEN_MODEL_FILENAME + 1];
+  for (uint8_t i = 0; i < nl; ++i) reqName[i] = (char)m.payload[10 + i];
+  reqName[nl] = 0;
+  if (kind == BULK_MODEL_YAML) {
+    // Active-model save (ADR-0013): refuse unless the named file is STILL the active model, so a model
+    // switch on the radio between pull and save can never overwrite the wrong model. (Unchanged.)
+    char fnbuf[MODELIDX_STRLEN + sizeof(MODEL_FILENAME_SUFFIX) + 2];
+    const char* fn = ueActiveModelFn(fnbuf);
+    if (!fn || !fn[0]) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
+    if (strlen(fn) != nl || memcmp(fn, reqName, nl) != 0) { ueModelPushAck(xfer, NACK_PUSH_MODEL); return; }
+    uint8_t i = 0; for (; i < LEN_MODEL_FILENAME && fn[i]; ++i) s_pushFn[i] = fn[i];
+    s_pushFn[i] = 0;
+    s_pushIsNew = false;
+  } else {
+    // ADR-0027 restore: write a NEW model to the requested slot if free, else the next free slot.
+    ueChooseRestoreTarget(reqName, s_pushFn);
+    if (!s_pushFn[0]) { ueModelPushAck(xfer, NACK_PUSH_IO); return; }   // no free slot
+    s_pushIsNew = true;
   }
-  uint8_t i = 0; for (; i < LEN_MODEL_FILENAME && fn[i]; ++i) s_pushFn[i] = fn[i];
-  s_pushFn[i] = 0;
   char tmpPath[64]; getModelPath(tmpPath, UE_PUSH_TMP);
   if (f_open(&s_pushFile, tmpPath, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) { ueModelPushAck(xfer, NACK_PUSH_IO); return; }
   s_pushXferId = xfer; s_pushTotal = total; s_pushExpCrc = expcrc;
@@ -1456,6 +1578,21 @@ static void ueModelPushEnd(const Message& m) {
   if (s_pushOffset != s_pushTotal || s_pushCrc != s_pushExpCrc) {   // corrupt/incomplete -> discard, keep original
     f_unlink(tmpPath); ueModelPushAck(xfer, NACK_PUSH_CRC); return;
   }
+  if (s_pushIsNew) {
+    // ADR-0027 restore: temp -> the chosen NEW file, then register WITHOUT activating (no .bak, no reload).
+    if (f_rename(tmpPath, livePath) != FR_OK) { f_unlink(tmpPath); ueModelPushAck(xfer, NACK_PUSH_IO); return; }
+#if defined(STORAGE_MODELSLIST)
+    ModelCell* nc = modelslist.addModel(s_pushFn, false, nullptr);   // register the cell (filename only)
+    if (!nc) { ueModelPushAck(xfer, NACK_PUSH_IO); return; }
+    modelslabels.updateModelCell(nc);                               // read name/bitmap/labels/rf from the file
+    storageDirty(EE_LABELS); storageCheck(true);                    // flush labels.yml via EdgeTX's own path
+#else
+    int idx = ueModelIdxFromName(s_pushFn);
+    if (idx >= 0) loadModelHeader((uint8_t)idx, &modelHeaders[idx]); // refresh the model-select header cache
+#endif
+    ueModelPushAckNamed(xfer, 0, s_pushFn);                         // committed; tell the app the final filename
+    return;
+  }
   // Atomic swap: previous model -> <fn>.bak (replace old bak), temp -> live.
   uint8_t i = 0; for (; i < LEN_MODEL_FILENAME && s_pushFn[i]; ++i) bakfn[i] = s_pushFn[i];
   bakfn[i] = 0; strcat(bakfn, ".bak");
@@ -1471,6 +1608,108 @@ static void ueModelPushEnd(const Message& m) {
   readModel(s_pushFn, (uint8_t*)&g_model, sizeof(g_model), MODELS_PATH);
   postModelLoad(false);
   ueModelPushAck(xfer, 0);           // committed
+}
+
+// Throttle-idle flight-safety check for model SELECT (defined in edgetx.cpp; no public header declares it).
+bool isThrottleWarningAlertNeeded();
+
+// ---- Set 6: model radio-ops — copy / delete / select (ADR-0025) -------------------------------------
+// Addressed by FILENAME (the app has these from labels.yml). colorlcd uses the modelslist API; mono maps
+// "modelNN.yml" -> index. Copy/delete change the model STORE, not live control output (select is separate,
+// gated, and not in this build). All return 0 on success or a NackReason. Run from the companion tick
+// (main-task context, per s14) — the same context EdgeTX's own model-select screen uses.
+#if defined(STORAGE_MODELSLIST)
+static ModelCell* ueFindModelCell(const char* fn) {
+  for (auto* c : modelslabels.getAllModels())
+    if (c && strncmp(c->modelFilename, fn, LEN_MODEL_FILENAME) == 0) return c;
+  return nullptr;
+}
+static uint8_t ueModelCopy(const char* src) {
+  ModelCell* c = ueFindModelCell(src);
+  if (!c) return NACK_NOT_FOUND;
+  storageFlushCurrentModel(); storageCheck(true);               // persist current before touching the SD
+  char dup[LEN_MODEL_FILENAME + 1]; memcpy(dup, c->modelFilename, LEN_MODEL_FILENAME); dup[LEN_MODEL_FILENAME] = 0;
+  if (!findNextFileIndex(dup, LEN_MODEL_FILENAME, MODELS_PATH)) return NACK_PUSH_IO;
+  // sdCopyFile returns nullptr on SUCCESS (an error string on failure) — so a non-null result is the
+  // failure case. The old `== nullptr` test was inverted and NACK'd every successful duplicate (field
+  // report 2026-10-10 #5: NACK reason=7 although the file copied).
+  if (sdCopyFile(c->modelFilename, MODELS_PATH, dup, MODELS_PATH) != nullptr) return NACK_PUSH_IO;
+  ModelCell* nc = modelslist.addModel(dup, true, c);            // new cell, copies rf/header from c
+  if (!nc) return NACK_PUSH_IO;
+  for (const auto& lbl : modelslabels.getLabelsByModel(c)) modelslabels.addLabelToModel(lbl, nc);  // keep labels
+  storageDirty(EE_LABELS); storageCheck(true);                  // flush labels.yml NOW via EdgeTX's own path (not direct save)
+  return 0;
+}
+static uint8_t ueModelDelete(const char* name) {
+  ModelCell* c = ueFindModelCell(name);
+  if (!c) return NACK_NOT_FOUND;
+  if (c == modelslist.getCurrentModel()) return NACK_ACTIVE;    // never delete the model in use
+  if (modelslist.removeModel(c)) return NACK_PUSH_IO;           // removeModel returns FALSE on success, true on failure
+  storageDirty(EE_LABELS); storageCheck(true);                  // flush labels.yml NOW via EdgeTX's own path (not direct save)
+  return 0;
+}
+// SELECT (switch active model, colorlcd). Native safety-gate (ADR-0025): refuse while throttle is not idle.
+// Replicates the model-select screen's load sequence (model_select.cpp) but with alarms=false so loadModel
+// cannot spin a blocking warning dialog from the companion tick (re-entrancy guard; throttle already checked).
+static uint8_t ueModelSelect(const char* name) {
+  if (isThrottleWarningAlertNeeded()) return NACK_UNSAFE;       // throttle not idle — do not switch
+  ModelCell* model = ueFindModelCell(name);
+  if (!model) return NACK_NOT_FOUND;
+  if (model == modelslist.getCurrentModel()) return 0;          // already active — no-op
+  storageFlushCurrentModel();
+  storageCheck(true);
+  memcpy(g_eeGeneral.currModelFilename, model->modelFilename, LEN_MODEL_FILENAME);
+  MainWindow::instance()->enableWidgetRefresh(false);           // pause refresh across the g_model reset
+  LayoutFactory::deleteCustomScreens();                         // torn-data guard: drop old model's screens first
+  LayoutFactory::deleteTopBarWidgets();
+  loadModel(g_eeGeneral.currModelFilename, false);              // alarms=false: no blocking dialog from the tick
+  modelslist.setCurrentModel(model);
+  LayoutFactory::loadCustomScreens();                           // rebuild for the newly-loaded model
+  MainWindow::instance()->enableWidgetRefresh(true);
+  storageDirty(EE_GENERAL);
+  storageCheck(true);
+  return 0;
+}
+#else
+static int ueModelIdxFromName(const char* fn) {
+  const char* p = fn; while (*p && (*p < '0' || *p > '9')) p++;   // "modelNN.yml" -> NN
+  if (!*p) return -1;
+  int v = 0; while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
+  return (v >= 0 && v < MAX_MODELS) ? v : -1;
+}
+static int ueNextFreeModelIdx() { for (uint8_t i = 0; i < MAX_MODELS; i++) if (!modelExists(i)) return (int)i; return -1; }
+static uint8_t ueModelCopy(const char* src) {
+  int idx = ueModelIdxFromName(src); if (idx < 0 || !modelExists((uint8_t)idx)) return NACK_NOT_FOUND;
+  int dst = ueNextFreeModelIdx();    if (dst < 0) return NACK_PUSH_IO;
+  storageFlushCurrentModel(); storageCheck(true);
+  return copyModel((uint8_t)dst, (uint8_t)idx) ? 0 : NACK_PUSH_IO;
+}
+static uint8_t ueModelDelete(const char* name) {
+  int idx = ueModelIdxFromName(name); if (idx < 0 || !modelExists((uint8_t)idx)) return NACK_NOT_FOUND;
+  if ((uint8_t)idx == g_eeGeneral.currModel) return NACK_ACTIVE;
+  return deleteModel((uint8_t)idx) == 0 ? 0 : NACK_PUSH_IO;
+}
+// SELECT (mono). Native safety-gate; load with alarms=false (no blocking dialog from the companion tick).
+static uint8_t ueModelSelect(const char* name) {
+  if (isThrottleWarningAlertNeeded()) return NACK_UNSAFE;
+  int idx = ueModelIdxFromName(name); if (idx < 0 || !modelExists((uint8_t)idx)) return NACK_NOT_FOUND;
+  if ((uint8_t)idx == g_eeGeneral.currModel) return 0;          // already active
+  storageFlushCurrentModel();
+  storageCheck(true);
+  g_eeGeneral.currModel = (uint8_t)idx;
+  loadModel((uint8_t)idx, false);
+  storageDirty(EE_GENERAL);
+  storageCheck(true);
+  return 0;
+}
+#endif
+// Read a {u8 nameLen, name} payload into buf (bounded). Returns false on a bad/empty/oversized name.
+static bool ueReadModelName(const Message& m, char* buf, uint8_t cap) {
+  if (m.len < 1) return false;
+  uint8_t nl = m.payload[0];
+  if (nl == 0 || nl >= cap || (uint32_t)(1 + nl) > m.len) return false;
+  for (uint8_t i = 0; i < nl; ++i) buf[i] = (char)m.payload[1 + i];
+  buf[nl] = 0; return true;
 }
 
 static bool     s_inited   = false;
@@ -2088,13 +2327,71 @@ static void onFrame(const Message& m, void*)
     p[0] = cnt;
     n = encodeFrame(MSG_TELECAT, s_seq++, p, (uint16_t)o, f, sizeof(f)); emitBytes(f, n);
   }
+  else if (m.type == MSG_TELE_DISCOVER) {
+    // Bug-1: the app's "Discover" now drives EdgeTX's OWN sensor discovery — the same
+    // `allowNewSensors` flag the radio's Telemetry menu toggles. While ON, incoming sensors are
+    // registered into g_model.telemetrySensors and persisted (storageDirty) by EdgeTX's own add
+    // path, instead of the app merely re-reading the live catalog. {u8 on}. ATTACHED-gated.
+    if (s_link.companionInputAllowed() && m.len >= 1) allowNewSensors = (m.payload[0] != 0);
+  }
   else if (m.type == MSG_MODEL_PULL) {
     // V2 (docs/protocol §8): stream the active model YAML to the app as the source of truth.
     ueStartModelPull(m.len >= 1 ? m.payload[0] : 0);
   }
+  else if (m.type == MSG_SD_LIST) {
+    // FL-1 (s12): list an SD directory (e.g. /LOGS) → {u8 count, [u32 size, u8 nameLen, name]}.
+    // Files only (dirs skipped), capped to what fits one frame — plenty for a flight-log session.
+    char path[80]; uint8_t pl = m.len ? m.payload[0] : 0;
+    if (pl == 0 || (uint32_t)(1 + pl) > m.len || pl >= sizeof(path)) pl = 0;
+    for (uint8_t i = 0; i < pl; ++i) path[i] = (char)m.payload[1 + i];
+    path[pl] = 0;
+    uint8_t p[240]; size_t o = 1; uint8_t cnt = 0;
+    DIR dir; FILINFO fno;
+    if (pl && f_opendir(&dir, path) == FR_OK) {
+      // BUG-007: bound TOTAL iterations, not just the file count. The AM_DIR `continue` below skips
+      // cnt++, so a directory with many sub-entries (or a corrupt entry f_readdir keeps returning) made
+      // the loop never terminate on /MODELS → the SD_LIST reply never went out (hung 2.5 min on-device;
+      // /LOGS has no such entries, so it always answered). `guard` caps it regardless.
+      uint16_t guard = 0;
+      while (cnt < 60 && ++guard <= 400 && f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+        if (fno.fattrib & AM_DIR) continue;
+        uint8_t nl = 0; while (nl < 48 && fno.fname[nl]) nl++;
+        if (o + 4 + 1 + nl > sizeof(p)) break;
+        uint32_t sz = (uint32_t)fno.fsize;
+        p[o++] = sz & 0xFF; p[o++] = (sz>>8)&0xFF; p[o++] = (sz>>16)&0xFF; p[o++] = (sz>>24)&0xFF;
+        p[o++] = nl; for (uint8_t k = 0; k < nl; ++k) p[o++] = (uint8_t)fno.fname[k];
+        cnt++;
+      }
+      f_closedir(&dir);
+    }
+    p[0] = cnt;
+    emitMsg(MSG_SD_LIST_RESP, p, (uint16_t)o);
+  }
+  else if (m.type == MSG_SD_PULL) {
+    // FL-1 (s12): {u8 pathLen, path} → stream that SD file via BULK (kind=BULK_LOG). Read-only.
+    char path[80]; uint8_t pl = m.len ? m.payload[0] : 0;
+    if (pl == 0 || (uint32_t)(1 + pl) > m.len || pl >= sizeof(path)) return;
+    for (uint8_t i = 0; i < pl; ++i) path[i] = (char)m.payload[1 + i];
+    path[pl] = 0;
+    const char* base = path; for (const char* q = path; *q; ++q) if (*q == '/') base = q + 1;
+    ueStartFilePull(path, base, BULK_LOG);
+  }
   else if (m.type == MSG_MODEL_PUSH_BEGIN) { ueModelPushBegin(m); }   // Phase 3: whole-file write-back
   else if (m.type == MSG_MODEL_PUSH_DATA)  { ueModelPushData(m); }
   else if (m.type == MSG_MODEL_PUSH_END)   { ueModelPushEnd(m); }
+  else if (m.type == MSG_MODEL_COPY || m.type == MSG_MODEL_DELETE || m.type == MSG_MODEL_SELECT) {
+    // Set 6 model radio-ops (ADR-0025). ATTACHED-gated. Copy/delete change the store; SELECT switches the
+    // active model (flight-adjacent) behind the native safety-gate (throttle must be idle → else NACK_UNSAFE).
+    uint8_t reason;
+    char nm[LEN_MODEL_FILENAME + 1];
+    if (!s_link.companionInputAllowed()) reason = NACK_NOT_ATTACHED;
+    else if (!ueReadModelName(m, nm, sizeof(nm))) reason = NACK_BAD_LENGTH;
+    else if (m.type == MSG_MODEL_COPY)   reason = ueModelCopy(nm);
+    else if (m.type == MSG_MODEL_DELETE) reason = ueModelDelete(nm);
+    else                                 reason = ueModelSelect(nm);
+    if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
+    else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
+  }
   else if (m.type == MSG_DESCRIBE_PAGE) {
     // Set up a PACED snapshot job (docs/09,10): visible rows (FIELD_DESC + value,
     // or LINK), then PAGE_DESC_END. Emitted from the tick loop, gated by
