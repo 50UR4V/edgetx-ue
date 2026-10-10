@@ -27,31 +27,32 @@ out, the build is byte-for-byte identical to upstream EdgeTX.
 - 📖 **App home / manual / support:** https://github.com/50UR4V/UltraEdge-app
 - 🖨️ **3D-printable phone mounts:** https://github.com/50UR4V/ultraedge-mounts
 
-## Versions at a glance
-| | Version | Where |
-|---|---|---|
-| **Latest prebuilt release** | **v1.0.2** (3 Oct 2026) | **[Releases](../../releases)** — the recommended download |
-| **Source on this branch** | **1.1.1** (development, pre-release) | this repository — build it yourself ([`BUILD-HOWTO.md`](BUILD-HOWTO.md)) |
+## Useful downloads (SD card & Lua scripts)
+Quick links to the files you'll want on your radio's SD card. Copy them over with a card reader, or from the
+app under **Radio Settings ▸ SD Card**.
 
-1.1.1 builds for Pocket, QX7 and TX16S but has **not yet been signed off on hardware as a release**, and has
-no prebuilt `.bin` yet. If you just want to fly with the app, use the v1.0.2 release.
+| What | Where | Status with UltraEdge |
+|---|---|---|
+| EdgeTX sound pack (voice prompts) | [EdgeTX/edgetx-sdcard-sounds — Releases](https://github.com/EdgeTX/edgetx-sdcard-sounds/releases) | ✅ Verified |
+| iNav telemetry widget (Lua) | [iNavFlight/OpenTX-Telemetry-Widget](https://github.com/iNavFlight/OpenTX-Telemetry-Widget) | ✅ Verified |
+| ExpressLRS configuration (Lua) | [ExpressLRS Lua how-to](https://www.expresslrs.org/quick-start/transmitters/lua-howto/) | ✅ Verified |
+| Betaflight TX Lua scripts | [betaflight/betaflight-tx-lua-scripts](https://github.com/betaflight/betaflight-tx-lua-scripts) | ⚠️ Unverified |
+| Yaapu FrSky telemetry (Lua) | [yaapu/FrskyTelemetryScript](https://github.com/yaapu/FrskyTelemetryScript) | ⚠️ Unverified |
 
 ## Prebuilt firmware (download & flash)
-Grab the `.bin` for your radio from **[Releases](../../releases)**, then follow [`FLASHING.md`](FLASHING.md).
-The statuses below are for the **v1.0.2** release.
+The current release is **v1.1.2**. Grab the `.bin` for your radio from **[Releases](../../releases)**, then
+follow [`FLASHING.md`](FLASHING.md).
 
-| Radio | MCU | Status (v1.0.2) |
+| Radio | MCU | Status (v1.1.2) |
 |---|---|---|
 | RadioMaster **Pocket** | STM32F407 | ✅ Verified — prebuilt in Releases |
 | FrSky **QX7 / QX7 Access** | STM32F205 | ✅ Verified — prebuilt in Releases |
 | RadioMaster **TX16S** | STM32F407 (color LCD) | ✅ Verified — prebuilt in Releases |
-| RadioMaster **Zorro** | STM32F407xE | ⚠️ **Unverified** prebuilt in Releases (v1.0.2) — flash at your own risk |
+| RadioMaster **Zorro** | STM32F407xE | ✅ Verified — prebuilt in Releases |
 | Other radios | — | 🔧 **build it yourself** ([`BUILD-HOWTO.md`](BUILD-HOWTO.md)) |
 
-> TX16S is the first **color-LCD** target verified on hardware. **Zorro** (v1.0.2) is provided as a
-> convenience prebuilt but is **not hardware-verified** — flash at your own risk and report back in
-> **[Issues](../../issues)**. We mark a radio ✅ Verified only after it's been built **and** checked on real
-> hardware; with no phone attached every build flies as stock EdgeTX.
+> We mark a radio ✅ Verified only after it's been built **and** checked on real hardware; with no phone
+> attached every build flies as stock EdgeTX. Report problems in **[Issues](../../issues)**.
 >
 > *Known on TX16S (color LCD): telemetry-screen refresh is slower than on mono (tracked). It doesn't
 > affect flight.*
@@ -64,18 +65,18 @@ See **[`BUILD-HOWTO.md`](BUILD-HOWTO.md)** for two paths:
 Both produce a `.bin` you flash exactly like the prebuilt ones.
 
 ## Compatibility
-Both v1.0.2 and 1.1.1 speak **UE Protocol v4**. Firmware and app negotiate the protocol version at connect;
-the v4 specification and reference codec are public in [UE Protocol](https://github.com/50UR4V/ue-protocol).
+**v1.1.2** speaks **UE Protocol v4** and pairs with the **UltraEdge app 1.2.13+**. Firmware and app negotiate
+the protocol version at connect; the v4 specification and reference codec are public in
+[UE Protocol](https://github.com/50UR4V/ue-protocol). Compared with v1.0.2 it adds:
 
-- **v1.0.2** (release) pairs with the **UltraEdge app v1.0.7+**. It adds in-app Lua tools (e.g. ExpressLRS
-  config) and fixes the input/mix "add" behaviour.
-- **1.1.1** (source on this branch) is developed alongside **UltraEdge app 1.2.10**; its newer features
-  need an app build at that level or later. Compared with v1.0.2 it adds:
-  - **Trainer** settings editable from the phone.
-  - **Manage Models** from the phone — select, copy and delete models on the radio.
-  - **Restore** a model from the phone's backup library back onto the radio.
-  - **Physical stick and switch positions** for the app's channel monitor, labelled for your stick mode.
-  - Fixes to model copy and to keeping the app in step after a model change.
+- **Manage Models** from the phone — select, copy and delete models on the radio.
+- **Restore** a model from the phone's backup library back onto the radio.
+- **Trainer** settings editable from the phone.
+- **Physical stick and switch positions** for the app's channel monitor, labelled for your stick mode.
+- Edits the app makes are saved to the SD card before the app re-reads the model, so it always shows what
+  was just saved; fixes to model copy and to keeping the app in step after a model change.
+
+The previous release, v1.0.2, remains available in Releases and works with app v1.0.7+.
 
 ## Where we're heading
 These are **future directions — not available today**: a replaceable control-processor daughterboard and

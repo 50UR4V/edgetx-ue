@@ -1378,6 +1378,9 @@ static void ueStartModelPull(uint8_t which) {
     fn = fnbuf;
 #endif
     if (!fn || !fn[0]) return;                        // no active model filename
+    // A typed CONFIG_WRITE only marks the model dirty; EdgeTX writes it to SD 1-15 s later. Flush it now
+    // so the file we stream reflects every edit already ACKed (Inputs Source/Switch edit → re-pull).
+    storageCheck(true);
     getModelPath(path, fn);                           // "/MODELS/<file>.yml"
     kind = BULK_MODEL_YAML;
   }
