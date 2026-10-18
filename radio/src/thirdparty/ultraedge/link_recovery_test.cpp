@@ -1,3 +1,17 @@
+/*
+ * Copyright (C) 2026 Sourav Karmakar (UltraEdge)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
 // Host cross-check for the link-recovery fix (bug: "write rejected: not attached" after the
 // app UI blocked heartbeats). NOT built into firmware. Verifies: HELLO attaches; heartbeats
 // sustain; a >timeout keepalive gap drops to HANDSHAKING (not DETACHED); the next valid frame

@@ -1,5 +1,7 @@
 // UltraEdge Companion Protocol — core codec implementation (embedded-safe C++11)
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Sourav Karmakar (UltraEdge). Released under the MIT License — the same reference codec is
+// published at github.com/50UR4V/ue-protocol. MIT code is GPL-2.0 compatible, so it builds into EdgeTX firmware.
+// SPDX-License-Identifier: MIT
 
 #include "protocol.h"
 

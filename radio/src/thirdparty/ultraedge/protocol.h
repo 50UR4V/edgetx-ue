@@ -10,7 +10,9 @@
 // See docs/01-companion-protocol.md for the design rationale. This header is the
 // authoritative wire definition for Phase 2 (structured path).
 //
-// SPDX-License-Identifier: GPL-3.0-or-later  (matches EdgeTX for upstream mergeability)
+// Copyright (c) 2026 Sourav Karmakar (UltraEdge). Released under the MIT License — the same reference codec is
+// published at github.com/50UR4V/ue-protocol. MIT code is GPL-2.0 compatible, so it builds into EdgeTX firmware.
+// SPDX-License-Identifier: MIT
 
 #ifndef ULTRAEDGE_PROTOCOL_H
 #define ULTRAEDGE_PROTOCOL_H

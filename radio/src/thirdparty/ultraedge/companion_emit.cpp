@@ -1,4 +1,18 @@
 /*
+ * Copyright (C) 2026 Sourav Karmakar (UltraEdge)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+/*
  * UltraEdge companion module (HW-3 emit + HW-4 bidirectional).
  *
  * When USB is in Serial (CDC) mode:
@@ -13,8 +27,6 @@
  * into a lock-free single-producer/single-consumer ring; all protocol work runs
  * in ultraedgeCompanionTick() from per10ms() (main context). The control path is
  * never touched.
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #if defined(USB_COMPANION)

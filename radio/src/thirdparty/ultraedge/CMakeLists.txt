@@ -1,3 +1,5 @@
+# Copyright (C) 2026 Sourav Karmakar (UltraEdge)
+# SPDX-License-Identifier: GPL-2.0-only
 # UltraEdge companion protocol — firmware-embedded build.
 # Compiled into the firmware only when USB_COMPANION is defined. Embedded-safe:
 # no dynamic allocation, no exceptions, no RTTI (inherits firmware flags).

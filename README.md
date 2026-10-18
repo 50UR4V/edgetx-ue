@@ -1,5 +1,8 @@
 # edgetx-ue — EdgeTX with the UltraEdge companion overlay
 
+[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE) [![Protocol: MIT](https://img.shields.io/badge/UE%20Protocol-MIT-yellow.svg)](https://github.com/50UR4V/ue-protocol)
+
+
 **Keep the radio you love in your hands; let the interface, computing and RF evolve around it.**
 UltraEdge is building toward a modular radio control system, and this firmware is part of it: it adds the
 UltraEdge companion interface to [EdgeTX](https://github.com/EdgeTX/edgetx). It lets compatible companion
@@ -25,7 +28,7 @@ out, the build is byte-for-byte identical to upstream EdgeTX.
 - 📱 **UltraEdge app (Google Play):** https://play.google.com/store/apps/details?id=com.ultraedge.companion
 - 🔌 **UE Protocol** (the open radio↔phone link this firmware speaks): https://github.com/50UR4V/ue-protocol
 - 📖 **App home / manual / support:** https://github.com/50UR4V/UltraEdge-app
-- 🖨️ **3D-printable phone mounts:** https://github.com/50UR4V/ultraedge-mounts
+- 🖨️ **3D-printable phone mounts:** planned
 
 ## Useful downloads (SD card & Lua scripts)
 Quick links to the files you'll want on your radio's SD card. Copy them over with a card reader, or from the
@@ -92,7 +95,10 @@ audio, telemetry and USB. We intend to keep rebasing onto EdgeTX and to discuss 
 the EdgeTX team. This is a **community project and is not affiliated with or endorsed by EdgeTX or FrSky.**
 
 ## License
-EdgeTX is licensed **GPL-3.0-or-later**; this fork is a derivative work and is distributed under the **same
-GPL-3.0** terms. The complete corresponding source — upstream EdgeTX history plus the UltraEdge overlay
+[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
+
+EdgeTX is licensed **GPL-2.0-only** (GNU General Public License, version 2). This fork is a derivative work and is
+distributed under the same **GPL-2.0-only** terms. The UltraEdge overlay files carry `SPDX-License-Identifier:
+GPL-2.0-only`. The shared protocol codec (`protocol.h`/`protocol.cpp`) is MIT, which is GPL-2.0 compatible. The complete corresponding source — upstream EdgeTX history plus the UltraEdge overlay
 commit — is in this repository. See [`LICENSE`](LICENSE). The UltraEdge app is proprietary and
 UE Protocol is open and will remain open source; both are separate from this firmware.
