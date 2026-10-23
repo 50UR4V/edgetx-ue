@@ -37,6 +37,13 @@ Swap the flags for your radio using the table below.
 
 ---
 
+## Version page (FW / VERS / GIT# / DATE)
+
+UltraEdge firmware names itself on the radio (`FW: ultraedge-<radio>`, `VERS: UE <version>`, `GIT#`, `DATE`; on
+companion builds, on the UltraEdge screen). The values come from `radio/src/thirdparty/ultraedge/ue_version.h`. A
+self-build shows `UE <version>-selfbuild`. To reproduce an official file byte-for-byte, copy the four values from the
+`.txt` next to it on the release page into this file before building.
+
 ## Path B — Local build
 
 ### Option B1 — EdgeTX Docker image (any OS with Docker)

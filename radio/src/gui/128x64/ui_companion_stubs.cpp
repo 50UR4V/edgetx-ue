@@ -19,10 +19,8 @@
 #if defined(UI_COMPANION)
 
 #include "edgetx.h"
-#include "fw_version.h"   // VERSION — shown on the companion screen (s28)
-#if __has_include("thirdparty/ultraedge/ue_version.h")
-  #include "thirdparty/ultraedge/ue_version.h"   // UE_FW_VERSION, written by build-fw.sh
-#endif
+#include "stamp.h"        // GIT_STR — the EdgeTX base commit (s38)
+#include "thirdparty/ultraedge/ue_version.h"   // UE_FW_VERSION/UE_GIT/UE_BUILD_DATE, written by build-fw.sh (s28, s38)
 #include "gui/common/stdlcd/menus_common.h"
 #include "translations/tts/tts.h"
 
@@ -40,11 +38,10 @@ void menuCompanionOnly(event_t event)
   lcdInvertLine(0);
   lcdDrawText(LCD_W / 2, 11, "Model & radio settings", CENTERED);
   lcdDrawText(LCD_W / 2, 20, "are in the UltraEdge app.", CENTERED);
-#if defined(UE_FW_VERSION)
-  // This build has no Version page — show which firmware this is here (s28).
-  lcdDrawText(LCD_W / 2, 33, "UE " UE_FW_VERSION " companion", CENTERED | SMLSIZE);
-  lcdDrawText(LCD_W / 2, 41, "EdgeTX " VERSION, CENTERED | SMLSIZE);
-#endif
+  // This build has no Version page — show the same identity the Version page and the app show (s28, s38).
+  lcdDrawText(LCD_W / 2, 30, "UE " UE_FW_VERSION " companion", CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 37, "git " UE_GIT " " UE_BUILD_DATE, CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 44, "EdgeTX " GIT_STR, CENTERED | SMLSIZE);
   lcdDrawText(LCD_W / 2, 54, "[EXIT] back", CENTERED);
 }
 

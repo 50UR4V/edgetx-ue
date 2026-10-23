@@ -214,6 +214,9 @@ if(PCBREV STREQUAL NB4P)
   target_sources(board_bl PUBLIC
     boards/generic_stm32/analog_inputs.cpp
   )
+  # UltraEdge s39: analog_inputs.cpp includes the generated stm32_adc_inputs.inc; without this dependency the
+  # bootloader library can compile before the generator runs ("stm32_adc_inputs.inc: No such file").
+  add_dependencies(board_bl stm32_adc_inputs hal_adc_inputs)
 endif()
 
 set(BOOTLOADER_SRC ${BOOTLOADER_SRC} $<TARGET_OBJECTS:board_bl>)

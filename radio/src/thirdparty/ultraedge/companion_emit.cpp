@@ -60,6 +60,13 @@
 #include "storage/yaml/yaml_parser.h"
 #include "storage/yaml/yaml_datastructs.h"
 #include "protocol.h"
+#include "stamp.h"                  // s38: VERSION / GIT_STR — the EdgeTX base, for MSG_RADIO_INFO v2
+#include "ue_version.h"             // s38: UE_FW_VERSION / UE_GIT / UE_BUILD_DATE / UE_BUILD_TIME (build-fw.sh)
+#if defined(UI_COMPANION)
+  #define UE_STAMP_VARIANT " companion"
+#else
+  #define UE_STAMP_VARIANT ""
+#endif
 
 // ---------------------------------------------------------------------------
 // UE_DEBUG_CRUMBS — power-off-surviving breadcrumbs for diagnosing the colorlcd
@@ -2673,9 +2680,9 @@ static void onFrame(const Message& m, void*)
     // factory unique ID (the app hashes it into a per-radio id; it never leaves the phone raw). The SF list is
     // EdgeTX's own YAML name table filtered by isAssignableFunctionAvailable(), so the app's picker matches the
     // radio's menu exactly (HAPTIC/LUA/RGB_LED/... are build options) with no #if drift on the phone.
-    static uint8_t rp[2 + 12 + 1 + 40 * 24];
+    static uint8_t rp[2 + 12 + 1 + 40 * 24 + 1 + 6 * 33];
     size_t o = 0;
-    rp[o++] = 1;    // ver
+    rp[o++] = 2;    // ver (2 = + firmware identity tail, s38)
     rp[o++] = 12;   // uidLen
     for (uint8_t w = 0; w < 3; ++w)
       for (uint8_t b = 0; b < 4; ++b) rp[o++] = (uint8_t)(cpu_uid[w] >> (8 * b));
@@ -2688,6 +2695,18 @@ static void onFrame(const Message& m, void*)
       memcpy(rp + o, enum_Functions[i].str, nl); o += nl; cnt++;
     }
     rp[cntAt] = cnt;
+    // v2 tail (s38, owner 2026-10-23): the SAME identity the radio's Version page shows, so the app can display and
+    // log exactly what is flashed. {u8 n, [u8 len, chars]} in order: FW name, UltraEdge version (+ variant),
+    // UltraEdge git, UltraEdge build date+time, EdgeTX version, EdgeTX git. Older apps stop reading after the SF list.
+    {
+      static const char* const fwInfo[] = {
+        "ultraedge-" FLAVOUR, UE_FW_VERSION UE_STAMP_VARIANT, UE_GIT, UE_BUILD_DATE " " UE_BUILD_TIME, VERSION, GIT_STR };
+      rp[o++] = (uint8_t)(sizeof(fwInfo) / sizeof(fwInfo[0]));
+      for (const char* f : fwInfo) {
+        size_t fl = strlen(f); if (fl > 32) fl = 32;
+        rp[o++] = (uint8_t)fl; memcpy(rp + o, f, fl); o += fl;
+      }
+    }
     emitMsg(MSG_RADIO_INFO, rp, (uint16_t)o);
   }
   else if (m.type == MSG_GET_TELECAT) {

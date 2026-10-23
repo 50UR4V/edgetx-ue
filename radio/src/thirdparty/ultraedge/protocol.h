@@ -128,7 +128,7 @@ enum MsgType : uint8_t {
   MSG_SD_LIST_NEWEST_RESP = 0x49, // radio->phone: {u8 count, u8 flags(b0=more), [u32 size, u32 ts, u8 nl, name]}
   MSG_GET_RADIO_INFO      = 0x4A, // phone->radio: {} request this radio's identity + SF catalog (ADR-0033, s30)
   MSG_GF_SET              = 0x4C, // phone->radio: {u8 index, yaml "customFn:\n  <index>:\n    ..."} one global function (ADR-0038, s36)
-  MSG_RADIO_INFO          = 0x4B, // radio->phone: {u8 ver=1, u8 uidLen, uid[], u8 n, [u8 func, u8 nl, yamlName]}
+  MSG_RADIO_INFO          = 0x4B, // radio->phone: {u8 ver=2, u8 uidLen, uid[], u8 n, [u8 func, u8 nl, yamlName], v2: u8 nf, [u8 len, str] (fw, ueVer, ueGit, ueDate, edgetxVer, edgetxGit; s38)}
   MSG_TELECAT     = 0x3D, // radio->phone. V2: {u8 count, [u16 id, u8 value_kind, u8 unit, u8 prec,
                           //   u8 nameLen, name]} — value_kind (ValueKind) added so the app knows each
                           //   sensor's shape. Legacy (v3): no value_kind byte. id = sensor index. The
