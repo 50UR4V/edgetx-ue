@@ -124,6 +124,11 @@ enum MsgType : uint8_t {
   MSG_SD_LIST      = 0x45, // phone->radio: {u8 pathLen, path} list a directory (e.g. /LOGS)   (FL-1, s12)
   MSG_SD_LIST_RESP = 0x46, // radio->phone: {u8 count, [u32 size, u8 nameLen, name]}            (FL-1, s12)
   MSG_SD_PULL      = 0x47, // phone->radio: {u8 pathLen, path} stream that SD file via BULK(kind=LOG) (FL-1)
+  MSG_SD_LIST_NEWEST      = 0x48, // phone->radio: {u8 pathLen, path, u8 max, u32 beforeTs, u8 nl, beforeName} (ADR-0031, s24)
+  MSG_SD_LIST_NEWEST_RESP = 0x49, // radio->phone: {u8 count, u8 flags(b0=more), [u32 size, u32 ts, u8 nl, name]}
+  MSG_GET_RADIO_INFO      = 0x4A, // phone->radio: {} request this radio's identity + SF catalog (ADR-0033, s30)
+  MSG_GF_SET              = 0x4C, // phone->radio: {u8 index, yaml "customFn:\n  <index>:\n    ..."} one global function (ADR-0038, s36)
+  MSG_RADIO_INFO          = 0x4B, // radio->phone: {u8 ver=1, u8 uidLen, uid[], u8 n, [u8 func, u8 nl, yamlName]}
   MSG_TELECAT     = 0x3D, // radio->phone. V2: {u8 count, [u16 id, u8 value_kind, u8 unit, u8 prec,
                           //   u8 nameLen, name]} — value_kind (ValueKind) added so the app knows each
                           //   sensor's shape. Legacy (v3): no value_kind byte. id = sensor index. The
@@ -159,6 +164,7 @@ enum MsgType : uint8_t {
   // Set 6 — model radio-ops (ADR-0025). ATTACHED-gated; ACK {ref_seq} / NACK {ref_seq, reason}. No PROTO bump.
   MSG_MODEL_SELECT = 0x6A, // phone->radio: {u8 nameLen, filename}  switch active model (native safety-gate)
   MSG_MODEL_COPY   = 0x6B, // phone->radio: {u8 nameLen, filename}  duplicate that model (auto-named copy)
+  MSG_MODEL_NEW    = 0x6D, // phone->radio: {} create a blank model (EdgeTX defaults) and make it active (ADR-0038, s36)
   MSG_MODEL_DELETE = 0x6C, // phone->radio: {u8 nameLen, filename}  delete that model (refused if active)
 
   MSG_ACK         = 0x70, // {ref_seq(1)}
@@ -302,6 +308,30 @@ enum ConfigField : uint16_t {
   CFG_GEN_ALARMS_FLASH=48, // T_BOOL  alarmsFlash
   CFG_GEN_TRN_MODE   =49,  // T_ENUM  g_model.trainerData.mode (TrainerMode 0..9) — future MODEL trainer page
   CFG_GEN_TRN_CALIB  =50,  // write-trigger: snapshot trainerInput[] -> g_eeGeneral.trainer.calib[] (EdgeTX "Cal")
+  // Model trainer (ADR-0034, s31) — EdgeTX MODEL SETUP › Trainer, on PAGE_MTRAINER. Friendly units on the wire.
+  CFG_MTRN_MODE      =51,  // T_ENUM  index into THIS build's available trainer modes (isTrainerModeAvailable)
+  CFG_MTRN_CHSTART   =52,  // T_U16   first trainer channel, 1-based (trainerData.channelsStart + 1)
+  CFG_MTRN_CHCOUNT   =53,  // T_U16   channel count 4..16 (8 + trainerData.channelsCount)
+  CFG_MTRN_FRAME     =54,  // T_U16   PPM frame length in us (22500 + 500 * frameLength)
+  CFG_MTRN_DELAY     =55,  // T_U16   PPM delay in us (300 + 50 * delay)
+  CFG_MTRN_POL       =56,  // T_ENUM  PPM polarity (Negative/Positive)
+  // Pre-flight checks (ADR-0035, s32) — EdgeTX MODEL SETUP › Pre-start checks, on PAGE_PREFLIGHT.
+  CFG_PRE_SETALL     =57,  // write-trigger: setAllPreflightSwitchStates() (checked switches take their current positions)
+  CFG_PRE_THRCUST    =58,  // T_BOOL  enableCustomThrottleWarning
+  CFG_PRE_THRPOS     =59,  // T_I16   customThrottleWarningPosition (-100..100 %)
+  CFG_PRE_POTMODE    =60,  // T_ENUM  potsWarnMode (Off / Manual / Auto) — s33
+  // Telemetry alarms (ADR-0037, s35) — EdgeTX MODEL › TELEMETRY › RSSI/RQly alarms, on PAGE_TELEM_ALARMS.
+  CFG_TEL_WARN       =61,  // T_U16   rfAlarms.warning  (0..rxStat.max, in the link's own unit)
+  CFG_TEL_CRIT       =62,  // T_U16   rfAlarms.critical
+  CFG_TEL_NOALARM    =63,  // T_BOOL  disableTelemetryWarning ("Disable telemetry alarms")
+  // Vario + use-global-functions (ADR-0038, s36)
+  CFG_VAR_SOURCE     =64,  // T_ENUM  index into "None" + vario-capable sensors (varioData.source = sensor + 1)
+  CFG_VAR_MIN        =65,  // T_I16   range low,  m/s  (-10 + varioData.min, -17..-3)
+  CFG_VAR_MAX        =66,  // T_I16   range high, m/s  (10 + varioData.max, 3..17)
+  CFG_VAR_CMIN       =67,  // T_I16   centre band low,  0.1 m/s (-5 + centerMin)
+  CFG_VAR_CMAX       =68,  // T_I16   centre band high, 0.1 m/s (5 + centerMax)
+  CFG_VAR_CTONE      =69,  // T_ENUM  centre: Tone / Silent
+  CFG_USE_GF         =70,  // T_BOOL  this model uses the global functions (!noGlobalFunctions)
 
   // ---- Outputs (docs/10) --------------------------------------------------
   // Per-channel detail field id = CFG_OUT_BASE | (channel<<4) | OutSub.
@@ -332,9 +362,11 @@ enum ConfigField : uint16_t {
   CFG_SWNAME_BASE   = 0xA000,   // Set 3b: per-physical-switch custom name; id = base + switchIndex
   CFG_MOD_BASE      = 0xB000,   // Set 3c: per-module RF config; id = base | (module<<4) | ModSub
   CFG_TRN_BASE      = 0xC000,   // Set 5: per-channel trainer mix; id = base | (channel<<4) | TrnSub
+  CFG_PRE_SW_BASE   = 0xD000,   // s32: per-switch pre-flight position; id = base + switch index (T_ENUM, see OPTS_SWW*)
+  CFG_PRE_POT_BASE  = 0xD040,   // s33: per-pot/slider pre-flight check on/off; id = base + flex-input index (T_BOOL)
 };
 // Model Setup section rows (each opens a sub-page of existing model fields).
-enum SecRow : uint8_t { SEC_TRIMS = 0, SEC_THROTTLE = 1, SEC_OTHER = 2, SEC_RF_INT = 3, SEC_RF_EXT = 4 };
+enum SecRow : uint8_t { SEC_TRIMS = 0, SEC_THROTTLE = 1, SEC_OTHER = 2, SEC_RF_INT = 3, SEC_RF_EXT = 4, SEC_TRAINER = 5, SEC_PREFLIGHT = 6 };
 // Set 3c — per-module RF config: detail field id = CFG_MOD_BASE | (module<<4) | ModSub.
 enum ModSub : uint8_t { MOD_TYPE = 0, MOD_CHANNELS = 1, MOD_CHSTART = 2, MOD_FAILSAFE = 3 };
 
@@ -354,7 +386,8 @@ enum CurveSub : uint8_t { CV_NAME=0, CV_TYPE=1, CV_SMOOTH=2, CV_POINTS=3, CV_PT0
 enum LsSub    : uint8_t { LS_FUNC=0, LS_V1=1, LS_V2=2, LS_V3=3, LS_AND=4, LS_DELAY=5, LS_DURATION=6 };
 enum SfSub    : uint8_t { SF_SWITCH=0, SF_FUNC=1, SF_PARAM=2, SF_REPEAT=3, SF_ENABLE=4, SF_PARAM2=5 };
 enum GvSub    : uint8_t { GV_NAME=0, GV_MIN=1, GV_MAX=2, GV_POPUP=3, GV_PREC=4, GV_UNIT=5 };
-enum FmSub    : uint8_t { FM_NAME=0, FM_SWITCH=1, FM_FADEIN=2, FM_FADEOUT=3 };
+enum FmSub    : uint8_t { FM_NAME=0, FM_SWITCH=1, FM_FADEIN=2, FM_FADEOUT=3,
+                          FM_GV0=0x10 };   // s34 (ADR-0036): FM_GV0+gv = GVar gv's value in this mode (T_I16, EdgeTX gvar_t)
 enum TeSub    : uint8_t { TE_LABEL=0, TE_UNIT=1, TE_PREC=2 };
 // Output detail subfields (mirror EdgeTX output_edit.cpp).
 enum OutSub : uint8_t {
@@ -364,7 +397,7 @@ enum OutSub : uint8_t {
 // Timer detail subfields (mirror EdgeTX timer_setup.cpp).
 enum TmrSub : uint8_t {
   TMR_NAME = 0, TMR_MODE = 1, TMR_START = 2, TMR_MINBEEP = 3,
-  TMR_COUNTDOWN = 4, TMR_PERSIST = 5, TMR_DIR = 6,
+  TMR_COUNTDOWN = 4, TMR_PERSIST = 5, TMR_DIR = 6, TMR_SWITCH = 7,   // TMR_SWITCH: ADR-0034 (s31)
 };
 static const uint8_t OUT_CHANNELS = 32;   // real output channels (MAX_OUTPUT_CHANNELS)
 static const uint8_t NUM_TIMERS   = 3;
@@ -450,6 +483,9 @@ enum ConfigPage : uint16_t {
   PAGE_RADIO_HW    = 0x0011,  // form: hardware / connectivity / warnings (Set 3)
   PAGE_RADIO_SWITCHES = 0x0012, // form: name each physical switch (Set 3b)
   PAGE_RADIO_TRAINER  = 0x0013, // form: trainer mode + per-channel mix (Set 5)
+  PAGE_MTRAINER    = 0x0F00,  // form: model trainer mode (+ slave PPM params) — ADR-0034 (s31)
+  PAGE_TELEM_ALARMS= 0x0F02,  // form: RSSI/RQly low + critical alarms, disable telemetry alarms (ADR-0037, s35)
+  PAGE_PREFLIGHT   = 0x0F01,  // form: pre-flight checks — throttle warning + per-switch positions (ADR-0035, s32)
   PAGE_MOD_BASE    = 0x0E00,  // + module(0/1): RF detail form — type/channels/failsafe + bind (Set 3c)
 
   PAGE_TIMER_BASE  = 0x0100,  // + timer(0..2): timer detail form
@@ -514,6 +550,7 @@ enum Caps : uint32_t {
   CAP_MODEL_FILE   = 1u << 7, // V2: model/radio YAML pull+push (source of truth)  [later phase]
   CAP_PASSTHRU_CRSF= 1u << 8, // V2: first-class CRSF/MAVLink passthrough for GCS  [later phase]
   CAP_CALIB        = 1u << 10, // Set 4: MSG_CAL drives EdgeTX's stick/pot calibration from the phone
+  CAP_PUSH_ACK     = 1u << 11, // ADR-0032 (s29): model-push DATA chunks are ACKed one by one (stop-and-wait)
 };
 
 // ---- Link state machine -----------------------------------------------------

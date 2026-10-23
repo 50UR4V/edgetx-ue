@@ -45,8 +45,18 @@ void abortPopMenu()
   TRACE("popMenu(%d) aborted", menuLevel);
 }
 
+#if defined(UI_COMPANION)
+// UltraEdge companion build: the config menus are compiled out; their table slots are empty. Never call a null
+// handler — show the "settings are in the app" screen instead (gui/128x64/ui_companion_stubs.cpp).
+void menuCompanionOnly(event_t event);
+#define UE_SAFE_MENU(f) ((f) ? (f) : menuCompanionOnly)
+#else
+#define UE_SAFE_MENU(f) (f)
+#endif
+
 void chainMenu(MenuHandlerFunc newMenu)
 {
+  newMenu = UE_SAFE_MENU(newMenu);
   killAllEvents();
   menuHandlers[menuLevel] = newMenu;
   menuEvent = EVT_ENTRY;
@@ -56,6 +66,7 @@ void chainMenu(MenuHandlerFunc newMenu)
 
 void pushMenu(MenuHandlerFunc newMenu)
 {
+  newMenu = UE_SAFE_MENU(newMenu);
   killAllEvents();
   if (menuLevel == DIM(menuHandlers) - 1) return;
 

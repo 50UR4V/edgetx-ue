@@ -32,6 +32,7 @@
 #if defined(USB_COMPANION)
 
 #include "edgetx.h"
+#include "os/time.h"           // s27: time_get_ms() for the bounded TX-room wait
 #include "hal/usb_driver.h"
 #include "timers.h"                 // timersStates[] for the Home screen (docs/13)
 #include "mixes.h"                  // insertMix/deleteMix for list edits (docs/13)
@@ -54,6 +55,10 @@
 #include "layout.h"                 // LayoutFactory — custom-screen teardown/reload on model SELECT (Set 6)
 #include "mainwindow.h"             // MainWindow::instance()->enableWidgetRefresh — pause refresh during switch
 #endif
+#include "model_init.h"                       // s36: setModelDefaults (new blank model, mono)
+#include "storage/yaml/yaml_tree_walker.h"   // s36: apply one global-function entry with EdgeTX's own YAML parser
+#include "storage/yaml/yaml_parser.h"
+#include "storage/yaml/yaml_datastructs.h"
 #include "protocol.h"
 
 // ---------------------------------------------------------------------------
@@ -191,6 +196,7 @@ static size_t cfgGetTimer(uint16_t id, uint8_t* out) {
     case TMR_COUNTDOWN:{ uint8_t b = (uint8_t)(t->countdownBeep & 0x03); return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case TMR_PERSIST: { uint8_t b = (uint8_t)(t->persistent & 0x03); if (b>2) b=0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case TMR_DIR:     { uint8_t b = t->showElapsed ? 1 : 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
+    case TMR_SWITCH:  { int16_t v = (int16_t)t->swtch; uint8_t b[2] = {(uint8_t)(v&0xFF),(uint8_t)((uint16_t)v>>8)}; return cfgValuePayload(id, T_I16, b, 2, out); }   // s31
     default: return 0;
   }
 }
@@ -232,6 +238,8 @@ static uint8_t cfgSetTimer(uint16_t id, uint8_t type, const uint8_t* data, uint8
     case TMR_COUNTDOWN:{ if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 3) return NACK_OUT_OF_RANGE; t->countdownBeep = data[0]; storageDirty(EE_MODEL); return 0; }
     case TMR_PERSIST: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 2) return NACK_OUT_OF_RANGE; t->persistent = data[0]; storageDirty(EE_MODEL); return 0; }
     case TMR_DIR:     { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 1) return NACK_OUT_OF_RANGE; t->showElapsed = data[0] ? 1 : 0; storageDirty(EE_MODEL); return 0; }
+    case TMR_SWITCH:  { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v = (int16_t)(data[0]|(data[1]<<8));   // s31: EdgeTX's timer switch range
+                        if (v < SWSRC_FIRST_IN_MIXES || v > SWSRC_LAST_IN_MIXES) return NACK_OUT_OF_RANGE; t->swtch = v; storageDirty(EE_MODEL); return 0; }
     default: return NACK_UNKNOWN_FIELD;
   }
 }
@@ -326,7 +334,8 @@ static uint8_t mxSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t len){ uin
     case MX_DESTCH:if(t!=T_U16||len!=2)return NACK_BAD_TYPE;{uint16_t v=d[0]|(d[1]<<8); if(v<1||v>OUT_CHANNELS)return NACK_OUT_OF_RANGE; m->destCh=v-1;} storageDirty(EE_MODEL); return 0;
     case MX_SWITCH:if(t!=T_I16||len!=2)return NACK_BAD_TYPE; m->swtch=rdI16(d); storageDirty(EE_MODEL); return 0;
     case MX_MULT:  if(t!=T_ENUM||len!=1)return NACK_BAD_TYPE; if(d[0]>2)return NACK_OUT_OF_RANGE; m->mltpx=d[0]; storageDirty(EE_MODEL); return 0;
-    case MX_CURVE: if(t!=T_I16||len!=2)return NACK_BAD_TYPE; m->curve.value=rdI16(d); storageDirty(EE_MODEL); return 0;
+    // s25 (ADR-0028/L2.2): MX_CURVE retired — it wrote a raw int16 into the 11-bit SourceNumVal. Curves are edited
+    // through the model file now; the typed setter answers "unknown field".
     default: return NACK_UNKNOWN_FIELD; } }
 
 // ---- Curves (CurveHeader) ----
@@ -346,9 +355,10 @@ static size_t cvGet(uint16_t id, uint8_t* out){ uint16_t i=itemOf(id,CFG_CURVE_B
 static uint8_t cvSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t len){ uint16_t i=itemOf(id,CFG_CURVE_BASE); if(i>=MAX_CURVES) return NACK_UNKNOWN_FIELD; CurveHeader* c=&g_model.curves[i];
   switch(subOf(id,CFG_CURVE_BASE)){
     case CV_NAME:  return setStrField(c->name,LEN_CURVE_NAME,t,d,len);
-    case CV_TYPE:  if(t!=T_ENUM||len!=1)return NACK_BAD_TYPE; if(d[0]>1)return NACK_OUT_OF_RANGE; c->type=d[0]; storageDirty(EE_MODEL); return 0;
+    // s25: CV_TYPE / CV_POINTS retired — changing type/count without EdgeTX moveCurve() shifted every later curve's
+    // points (corruption). The app edits curves whole via the model file (CurveSet).
+    case CV_TYPE: case CV_POINTS: return NACK_UNKNOWN_FIELD;
     case CV_SMOOTH:if(t!=T_BOOL||len!=1)return NACK_BAD_TYPE; c->smooth=d[0]?1:0; storageDirty(EE_MODEL); return 0;
-    case CV_POINTS:if(t!=T_I16||len!=2)return NACK_BAD_TYPE;{int16_t p=rdI16(d); if(p<3||p>17)return NACK_OUT_OF_RANGE; c->points=p-5;} storageDirty(EE_MODEL); return 0;
     default: {
       uint8_t sub=subOf(id,CFG_CURVE_BASE);
       if (sub>=CV_PT0 && sub<CV_PT0+MAX_POINTS_PER_CURVE) {   // curve point Y-value (docs/13)
@@ -372,7 +382,7 @@ static size_t lsGet(uint16_t id, uint8_t* out){ uint16_t i=itemOf(id,CFG_LS_BASE
     default: return 0; } }
 static uint8_t lsSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t len){ uint16_t i=itemOf(id,CFG_LS_BASE); if(i>=MAX_LOGICAL_SWITCHES) return NACK_UNKNOWN_FIELD; LogicalSwitchData* s=&g_model.logicalSw[i];
   switch(subOf(id,CFG_LS_BASE)){
-    case LS_FUNC:    if(t!=T_I16||len!=2)return NACK_BAD_TYPE; s->func=(uint8_t)rdI16(d); storageDirty(EE_MODEL); return 0;
+    case LS_FUNC:    return NACK_UNKNOWN_FIELD;   // s25: retired — no operand reset on a function change (model file now)
     case LS_V1:      if(t!=T_I16||len!=2)return NACK_BAD_TYPE; s->v1=rdI16(d); storageDirty(EE_MODEL); return 0;
     case LS_V2:      if(t!=T_I16||len!=2)return NACK_BAD_TYPE; s->v2=rdI16(d); storageDirty(EE_MODEL); return 0;
     case LS_V3:      if(t!=T_I16||len!=2)return NACK_BAD_TYPE; s->v3=rdI16(d); storageDirty(EE_MODEL); return 0;
@@ -425,9 +435,7 @@ static uint8_t sfSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t len){ uin
   SfParamKind k=sfParamKind((uint8_t)c->func);
   switch(subOf(id,CFG_SF_BASE)){
     case SF_SWITCH:if(t!=T_I16||len!=2)return NACK_BAD_TYPE; c->swtch=rdI16(d); storageDirty(EE_MODEL); return 0;
-    case SF_FUNC:  if(t!=T_ENUM||len!=1)return NACK_BAD_TYPE; if(d[0]>=FUNC_MAX)return NACK_OUT_OF_RANGE;
-      if((uint8_t)c->func!=d[0]){ c->func=d[0]; memset(&c->all,0,sizeof(c->all)); }  // clear stale union on func change (EdgeTX does this)
-      storageDirty(EE_MODEL); return 0;
+    case SF_FUNC:  return NACK_UNKNOWN_FIELD;   // s25: retired — left `active` stale on a function change (model file now)
     case SF_REPEAT:if(t!=T_I16||len!=2)return NACK_BAD_TYPE; c->repeat=(int8_t)rdI16(d); storageDirty(EE_MODEL); return 0;
     case SF_ENABLE:if(t!=T_BOOL||len!=1)return NACK_BAD_TYPE; c->active=d[0]?1:0; storageDirty(EE_MODEL); return 0;
     case SF_PARAM:
@@ -467,14 +475,24 @@ static size_t fmGet(uint16_t id, uint8_t* out){ uint16_t i=itemOf(id,CFG_FM_BASE
     case FM_SWITCH: return vI16(id,(int16_t)fmd->swtch,out);
     case FM_FADEIN: return vU16(id,(uint16_t)fmd->fadeIn,out);
     case FM_FADEOUT:return vU16(id,(uint16_t)fmd->fadeOut,out);
-    default: return 0; } }
+    default: { uint8_t gv=(uint8_t)(subOf(id,CFG_FM_BASE)-FM_GV0); if (subOf(id,CFG_FM_BASE)>=FM_GV0 && gv<MAX_GVARS) return vI16(id,fmd->gvars[gv],out); return 0; } } }
 static uint8_t fmSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t len){ uint16_t i=itemOf(id,CFG_FM_BASE); if(i>=MAX_FLIGHT_MODES) return NACK_UNKNOWN_FIELD; FlightModeData* fmd=&g_model.flightModeData[i];
   switch(subOf(id,CFG_FM_BASE)){
     case FM_NAME:   return setStrField(fmd->name,LEN_FLIGHT_MODE_NAME,t,d,len);
     case FM_SWITCH: if(t!=T_I16||len!=2)return NACK_BAD_TYPE; fmd->swtch=rdI16(d); storageDirty(EE_MODEL); return 0;
     case FM_FADEIN: if(t!=T_U16||len!=2)return NACK_BAD_TYPE; fmd->fadeIn=(uint8_t)(d[0]|(d[1]<<8)); storageDirty(EE_MODEL); return 0;
     case FM_FADEOUT:if(t!=T_U16||len!=2)return NACK_BAD_TYPE; fmd->fadeOut=(uint8_t)(d[0]|(d[1]<<8)); storageDirty(EE_MODEL); return 0;
-    default: return NACK_UNKNOWN_FIELD; } }
+    default: {
+      // s34 (ADR-0036): a GVar's value in this flight mode, EdgeTX's own encoding — a value within the GVar's
+      // min..max, or (not FM0) GVAR_MAX+1+n = "use flight mode n" (n skips this mode). Written straight into the
+      // live model (C2: the radio stays the truth; never through the model-file push), then the app re-reads.
+      uint8_t sub=(uint8_t)subOf(id,CFG_FM_BASE); uint8_t gv=(uint8_t)(sub-FM_GV0);
+      if (sub<FM_GV0 || gv>=MAX_GVARS) return NACK_UNKNOWN_FIELD;
+      if (t!=T_I16||len!=2) return NACK_BAD_TYPE;
+      int16_t v=rdI16(d);
+      if (v > GVAR_MAX) { if (i==0 || v > GVAR_MAX + MAX_FLIGHT_MODES - 1) return NACK_OUT_OF_RANGE; }
+      else if (v < GVAR_MIN + g_model.gvars[gv].min || v > GVAR_MAX - g_model.gvars[gv].max) return NACK_OUT_OF_RANGE;
+      fmd->gvars[gv]=v; storageDirty(EE_MODEL); return 0; } } }
 
 // ---- Telemetry sensors (TelemetrySensor) ----
 static size_t teGet(uint16_t id, uint8_t* out){ uint16_t i=itemOf(id,CFG_TELEM_BASE); if(i>=MAX_TELEMETRY_SENSORS) return 0; TelemetrySensor* s=&g_model.telemetrySensors[i];
@@ -603,10 +621,61 @@ static uint8_t subsystemSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t le
 // ---- Set 3c: per-module RF config (g_model.moduleData[m]). Module type reuses EdgeTX's own
 // enum_ModuleType table, so the option list + raw values are exactly this build's (no #if drift). ----
 extern const YamlIdStr enum_ModuleType[];
+extern const YamlIdStr enum_Functions[];   // s30: this build's SF YAML names (MSG_RADIO_INFO)
 static uint8_t ueModTypeCount() { uint8_t n = 0; while (enum_ModuleType[n].str) n++; return n; }
 static uint8_t ueModTypeIndexOf(uint8_t type) { for (uint8_t i = 0; enum_ModuleType[i].str; i++) if ((uint8_t)enum_ModuleType[i].id == type) return i; return 0; }
 static const char* s_modTypeOpts[24];
 static uint8_t ueModTypeOpts() { uint8_t n = ueModTypeCount(); if (n > 24) n = 24; for (uint8_t i = 0; i < n; i++) s_modTypeOpts[i] = enum_ModuleType[i].str; return n; }
+// s31 (ADR-0034) model trainer mode: the options are exactly the modes THIS radio offers (EdgeTX's own
+// isTrainerModeAvailable + STR_VTRAINERMODES labels), plus the model's current mode so it always shows.
+static const char* s_trnModeOpts[TRAINER_MODE_MAX() + 1];
+static uint8_t s_trnModeIds[TRAINER_MODE_MAX() + 1];
+static uint8_t ueTrnModeOpts() {
+  uint8_t n = 0;
+  for (int m = TRAINER_MODE_MIN(); m <= TRAINER_MODE_MAX(); ++m)
+    if (m == g_model.trainerData.mode || isTrainerModeAvailable(m)) { s_trnModeIds[n] = (uint8_t)m; s_trnModeOpts[n] = STR_VTRAINERMODES[m]; n++; }
+  return n;
+}
+static uint8_t ueTrnModeIndexOf(uint8_t mode) { for (uint8_t i = 0; i <= TRAINER_MODE_MAX(); i++) if (s_trnModeIds[i] == mode) return i; return 0; }
+static const char* const OPTS_PPMPOL[] = { "Negative", "Positive" };
+// s32 (ADR-0035) pre-flight switch checks. EdgeTX keeps 2 bits per switch in g_model.switchWarning: 0 = no check,
+// 1 = up, 2 = middle, 3 = down; 2-position switches never use "middle". The app sees an option index.
+static const char* const OPTS_SWW3[] = { "No check", "Up", "Middle", "Down" };
+static const char* const OPTS_SWW2[] = { "No check", "Up", "Down" };
+static int8_t uePreSwitch(uint8_t row) {   // row-th switch that may carry a warning -> switch index, or -1
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < switchGetMaxAllSwitches(); i++) if (SWITCH_WARNING_ALLOWED(i)) { if (n == row) return (int8_t)i; n++; }
+  return -1;
+}
+static uint8_t ueSwwIndex(uint8_t sw, uint8_t state) { return IS_CONFIG_3POS(sw) ? state : (uint8_t)(state == 3 ? 2 : (state ? 1 : 0)); }
+static uint8_t ueSwwState(uint8_t sw, uint8_t idx) { return IS_CONFIG_3POS(sw) ? idx : (uint8_t)(idx == 2 ? 3 : idx); }
+// s33 pots/sliders: Manual keeps the positions saved with "Use current positions"; Auto saves them when the model is
+// saved (EdgeTX storage_common). Rows exist only for flex inputs configured as a pot/slider (IS_POT_SLIDER_AVAILABLE).
+static const char* const OPTS_POTWARN[] = { "Off", "Manual", "Auto" };
+static int8_t uePrePot(uint8_t row) {
+  uint8_t n = 0, max = adcGetMaxInputs(ADC_INPUT_FLEX);
+  for (uint8_t i = 0; i < max && i < MAX_POTS; i++) if (IS_POT_SLIDER_AVAILABLE(i)) { if (n == row) return (int8_t)i; n++; }
+  return -1;
+}
+// s36 (ADR-0038) vario: source options = "None" + sensors with a m/s or ft/s unit (EdgeTX isVarioSensorAvailable).
+#if defined(VARIO)
+static char s_varLbl[16][TELEM_LABEL_LEN + 1];
+static const char* s_varOpts[17];
+static uint8_t s_varIds[17];
+static uint8_t ueVarioOpts() {
+  uint8_t n = 0; s_varOpts[n] = "None"; s_varIds[n++] = 0;
+  for (uint8_t i = 0; i < MAX_TELEMETRY_SENSORS && n < 17; i++) {
+    if (!(isVarioSensorAvailable(i + 1) || g_model.varioData.source == i + 1)) continue;
+    char* d = s_varLbl[n - 1]; uint8_t k = 0;
+    for (; k < TELEM_LABEL_LEN && g_model.telemetrySensors[i].label[k]; k++) d[k] = g_model.telemetrySensors[i].label[k];
+    d[k] = 0; s_varOpts[n] = d; s_varIds[n++] = (uint8_t)(i + 1);
+  }
+  return n;
+}
+static uint8_t ueVarioIndexOf(uint8_t src) { uint8_t n = ueVarioOpts(); for (uint8_t i = 0; i < n; i++) if (s_varIds[i] == src) return i; return 0; }
+#endif
+static const char* const OPTS_VARCTONE[] = { "Tone", "Silent" };
+static uint8_t uePreSwitchCount() { uint8_t n = 0; for (uint8_t i = 0; i < switchGetMaxAllSwitches(); i++) if (SWITCH_WARNING_ALLOWED(i)) n++; return n; }
 static const char* const OPTS_FAILSAFE[] = { "Not set", "Hold", "Custom", "No pulses", "Receiver" };  // FailsafeModes 0..4
 
 static size_t modGet(uint16_t id, uint8_t* out) {
@@ -668,6 +737,28 @@ static size_t cfgGet(uint16_t id, uint8_t* out) {
     case CFG_GEN_ADJUST_RTC: { uint8_t b = g_eeGeneral.adjustRTC ? 1 : 0; return cfgValuePayload(id, T_BOOL, &b, 1, out); }
     case CFG_GEN_UNITS:      { uint8_t b = g_eeGeneral.imperial ? 1 : 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case CFG_GEN_TRN_MODE:   { uint8_t b = (uint8_t)g_model.trainerData.mode; if (b > 9) b = 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
+    // s31 (ADR-0034) model trainer — friendly units (see protocol.h)
+    case CFG_MTRN_MODE:    { ueTrnModeOpts(); uint8_t b = ueTrnModeIndexOf(g_model.trainerData.mode); return cfgValuePayload(id, T_ENUM, &b, 1, out); }
+    case CFG_MTRN_CHSTART: { uint16_t v = (uint16_t)(g_model.trainerData.channelsStart + 1); uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)(v>>8)}; return cfgValuePayload(id, T_U16, b, 2, out); }
+    case CFG_MTRN_CHCOUNT: { uint16_t v = (uint16_t)(8 + g_model.trainerData.channelsCount); uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)(v>>8)}; return cfgValuePayload(id, T_U16, b, 2, out); }
+    case CFG_MTRN_FRAME:   { uint16_t v = (uint16_t)(22500 + 500 * g_model.trainerData.frameLength); uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)(v>>8)}; return cfgValuePayload(id, T_U16, b, 2, out); }
+    case CFG_MTRN_DELAY:   { uint16_t v = (uint16_t)(300 + 50 * g_model.trainerData.delay); uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)(v>>8)}; return cfgValuePayload(id, T_U16, b, 2, out); }
+    case CFG_MTRN_POL:     { uint8_t b = g_model.trainerData.pulsePol ? 1 : 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
+    case CFG_PRE_THRCUST:  { uint8_t b = g_model.enableCustomThrottleWarning ? 1 : 0; return cfgValuePayload(id, T_BOOL, &b, 1, out); }   // s32
+    case CFG_TEL_WARN:     return vU16(id, (uint16_t)(g_model.rfAlarms.warning < 0 ? 0 : g_model.rfAlarms.warning), out);    // s35
+    case CFG_TEL_CRIT:     return vU16(id, (uint16_t)(g_model.rfAlarms.critical < 0 ? 0 : g_model.rfAlarms.critical), out);
+    case CFG_TEL_NOALARM:  return vBool(id, g_model.disableTelemetryWarning, out);
+    case CFG_USE_GF:       return vBool(id, !g_model.noGlobalFunctions, out);   // s36
+#if defined(VARIO)
+    case CFG_VAR_SOURCE:   return vEnum(id, ueVarioIndexOf(g_model.varioData.source), out);
+    case CFG_VAR_MIN:      return vI16(id, (int16_t)(-10 + g_model.varioData.min), out);
+    case CFG_VAR_MAX:      return vI16(id, (int16_t)(10 + g_model.varioData.max), out);
+    case CFG_VAR_CMIN:     return vI16(id, (int16_t)(-5 + g_model.varioData.centerMin), out);
+    case CFG_VAR_CMAX:     return vI16(id, (int16_t)(5 + g_model.varioData.centerMax), out);
+    case CFG_VAR_CTONE:    return vEnum(id, g_model.varioData.centerSilent, out);
+#endif
+    case CFG_PRE_POTMODE:  { uint8_t b = (uint8_t)g_model.potsWarnMode; if (b > POTS_WARN_AUTO) b = 0; return cfgValuePayload(id, T_ENUM, &b, 1, out); }   // s33
+    case CFG_PRE_THRPOS:   { int16_t v = g_model.customThrottleWarningPosition; uint8_t b[2]={(uint8_t)(v&0xFF),(uint8_t)((uint16_t)v>>8)}; return cfgValuePayload(id, T_I16, b, 2, out); }
     case CFG_GEN_GPS_FORMAT: { uint8_t b = (uint8_t)g_eeGeneral.gpsFormat; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case CFG_GEN_USB_MODE:   { uint8_t b = (uint8_t)g_eeGeneral.USBMode; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case CFG_GEN_JACK_MODE:  { uint8_t b = (uint8_t)g_eeGeneral.jackMode; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
@@ -701,6 +792,14 @@ static size_t cfgGet(uint16_t id, uint8_t* out) {
         return vStr(id, g_eeGeneral.switchConfig[i].name, LEN_SWITCH_NAME, out);
       }
       if (id >= CFG_MOD_BASE && id < CFG_MOD_BASE + (NUM_MODULES << 4)) return modGet(id, out);  // Set 3c
+      if (id >= CFG_PRE_POT_BASE && id < CFG_PRE_POT_BASE + MAX_POTS) {   // s33 pot/slider check on/off
+        uint8_t i = (uint8_t)(id - CFG_PRE_POT_BASE); uint8_t b = (g_model.potsWarnEnabled & (1 << i)) ? 1 : 0;
+        return cfgValuePayload(id, T_BOOL, &b, 1, out);
+      }
+      if (id >= CFG_PRE_SW_BASE && id < CFG_PRE_SW_BASE + 64) {   // s32 pre-flight switch position
+        uint8_t sw = (uint8_t)(id - CFG_PRE_SW_BASE); if (sw >= switchGetMaxAllSwitches() || !SWITCH_WARNING_ALLOWED(sw)) return 0;
+        uint8_t b = ueSwwIndex(sw, g_model.getSwitchWarning(sw)); return cfgValuePayload(id, T_ENUM, &b, 1, out);
+      }
       if (id >= CFG_TRN_BASE)     return cfgGetTrainer(id, out);   // Set 5 trainer (0xC000 — above CFG_INPUT)
       if (id >= CFG_INPUT_BASE)   return subsystemGet(id, out);
       if (id >= CFG_SECROW_BASE) return sectionRowSummary(id, out);
@@ -756,6 +855,62 @@ static uint8_t cfgSet(uint16_t id, uint8_t type, const uint8_t* data, uint8_t le
     case CFG_GEN_ADJUST_RTC: { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_eeGeneral.adjustRTC = data[0] ? 1 : 0; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_UNITS:      { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 1) return NACK_OUT_OF_RANGE; g_eeGeneral.imperial = data[0]; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_TRN_MODE:   { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 9) return NACK_OUT_OF_RANGE; g_model.trainerData.mode = data[0]; storageDirty(EE_MODEL); return 0; }
+    // s31 (ADR-0034) model trainer. The mode is applied by EdgeTX's own checkTrainerSettings() in the main loop.
+    case CFG_MTRN_MODE: {
+      if (type != T_ENUM || len != 1) return NACK_BAD_TYPE;
+      uint8_t n = ueTrnModeOpts(); if (data[0] >= n) return NACK_OUT_OF_RANGE;
+      uint8_t m = s_trnModeIds[data[0]];
+      if (!isTrainerModeAvailable(m) && m != g_model.trainerData.mode) return NACK_OUT_OF_RANGE;
+      g_model.trainerData.mode = m;
+#if defined(BLUETOOTH)
+      bluetooth.state = BLUETOOTH_STATE_OFF; bluetooth.distantAddr[0] = '\0';   // as EdgeTX's model-setup row does
+#endif
+      storageDirty(EE_MODEL); return 0; }
+    case CFG_MTRN_CHSTART: { if (type != T_U16 || len != 2) return NACK_BAD_TYPE; uint16_t v = data[0]|(data[1]<<8);
+      if (v < 1 || v > (uint16_t)(32 - 8 - g_model.trainerData.channelsCount + 1)) return NACK_OUT_OF_RANGE;
+      g_model.trainerData.channelsStart = (uint8_t)(v - 1); storageDirty(EE_MODEL); return 0; }
+    case CFG_MTRN_CHCOUNT: { if (type != T_U16 || len != 2) return NACK_BAD_TYPE; int v = (int)(data[0]|(data[1]<<8)) - 8;
+      if (v < -4 || v > MAX_TRAINER_CHANNELS_M8 || v > 32 - 8 - g_model.trainerData.channelsStart) return NACK_OUT_OF_RANGE;
+      g_model.trainerData.channelsCount = (int8_t)v; setDefaultPpmFrameLengthTrainer(); storageDirty(EE_MODEL); return 0; }
+    case CFG_MTRN_FRAME: { if (type != T_U16 || len != 2) return NACK_BAD_TYPE; int v = (int)(data[0]|(data[1]<<8));
+      if (v < 12500 || v > 40000 || (v - 22500) % 500) return NACK_OUT_OF_RANGE;
+      g_model.trainerData.frameLength = (int8_t)((v - 22500) / 500); storageDirty(EE_MODEL); return 0; }
+    case CFG_MTRN_DELAY: { if (type != T_U16 || len != 2) return NACK_BAD_TYPE; int v = (int)(data[0]|(data[1]<<8));
+      if (v < 100 || v > 800 || (v - 300) % 50) return NACK_OUT_OF_RANGE;
+      g_model.trainerData.delay = (int8_t)((v - 300) / 50); storageDirty(EE_MODEL); return 0; }
+    // s32 (ADR-0035) pre-flight checks
+    case CFG_PRE_SETALL:  {   // EdgeTX's long-ENTER: checked switches take their current positions; s33: so do checked pots (Manual)
+      setAllPreflightSwitchStates();
+      if (g_model.potsWarnMode == POTS_WARN_MANUAL)
+        for (uint8_t i = 0; i < adcGetMaxInputs(ADC_INPUT_FLEX) && i < MAX_POTS; i++)
+          if (g_model.potsWarnEnabled & (1 << i)) SAVE_POT_POSITION(i);
+      storageDirty(EE_MODEL); return 0; }
+    // s35 (ADR-0037) telemetry alarms — EdgeTX's editNumberField range 0..100 (the radio's own rxStat.max caps it)
+    case CFG_TEL_WARN: case CFG_TEL_CRIT: {
+      if (type != T_U16 || len != 2) return NACK_BAD_TYPE; uint16_t v = data[0]|(data[1]<<8); if (v > 100) return NACK_OUT_OF_RANGE;
+      if (id == CFG_TEL_WARN) g_model.rfAlarms.warning = (int8_t)v; else g_model.rfAlarms.critical = (int8_t)v;
+      storageDirty(EE_MODEL); return 0; }
+    case CFG_TEL_NOALARM: { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_model.disableTelemetryWarning = data[0] ? 1 : 0; storageDirty(EE_MODEL); return 0; }
+    case CFG_USE_GF:      { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_model.noGlobalFunctions = data[0] ? 0 : 1; storageDirty(EE_MODEL); return 0; }   // s36
+#if defined(VARIO)
+    // s36 (ADR-0038) vario — EdgeTX's own ranges (model_telemetry.cpp), friendly units on the wire
+    case CFG_VAR_SOURCE: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; uint8_t n = ueVarioOpts(); if (data[0] >= n) return NACK_OUT_OF_RANGE;
+                           g_model.varioData.source = s_varIds[data[0]]; storageDirty(EE_MODEL); return 0; }
+    case CFG_VAR_MIN:  { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v = rdI16(data); if (v < -17 || v > -3) return NACK_OUT_OF_RANGE; g_model.varioData.min = (int8_t)(v + 10); storageDirty(EE_MODEL); return 0; }
+    case CFG_VAR_MAX:  { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v = rdI16(data); if (v < 3 || v > 17) return NACK_OUT_OF_RANGE; g_model.varioData.max = (int8_t)(v - 10); storageDirty(EE_MODEL); return 0; }
+    case CFG_VAR_CMIN: { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t r = (int16_t)(rdI16(data) + 5);
+                         if (r < -16 || r > 5 + min<int8_t>(10, g_model.varioData.centerMax + 5)) return NACK_OUT_OF_RANGE; g_model.varioData.centerMin = (int8_t)r; storageDirty(EE_MODEL); return 0; }
+    case CFG_VAR_CMAX: { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t r = (int16_t)(rdI16(data) - 5);
+                         if (r > 15 || r < -5 + max<int8_t>(-10, g_model.varioData.centerMin - 5)) return NACK_OUT_OF_RANGE; g_model.varioData.centerMax = (int8_t)r; storageDirty(EE_MODEL); return 0; }
+    case CFG_VAR_CTONE:{ if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 1) return NACK_OUT_OF_RANGE; g_model.varioData.centerSilent = data[0]; storageDirty(EE_MODEL); return 0; }
+#endif
+    case CFG_PRE_POTMODE: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > POTS_WARN_AUTO) return NACK_OUT_OF_RANGE;
+                            g_model.potsWarnMode = data[0]; storageDirty(EE_MODEL); return 0; }
+    case CFG_PRE_THRCUST: { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_model.enableCustomThrottleWarning = data[0] ? 1 : 0; storageDirty(EE_MODEL); return 0; }
+    case CFG_PRE_THRPOS:  { if (type != T_I16 || len != 2) return NACK_BAD_TYPE; int16_t v = rdI16(data); if (v < -100 || v > 100) return NACK_OUT_OF_RANGE;
+                            g_model.customThrottleWarningPosition = (int8_t)v; storageDirty(EE_MODEL); return 0; }
+    case CFG_MTRN_POL: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 1) return NACK_OUT_OF_RANGE;
+      g_model.trainerData.pulsePol = data[0] ? 1 : 0; storageDirty(EE_MODEL); return 0; }
     case CFG_GEN_TRN_CALIB:  { memcpy(g_eeGeneral.trainer.calib, trainerInput, sizeof(g_eeGeneral.trainer.calib)); storageDirty(EE_GENERAL); return 0; }  // EdgeTX "Cal": snapshot live trainer input as centre
     case CFG_GEN_GPS_FORMAT: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 1) return NACK_OUT_OF_RANGE; g_eeGeneral.gpsFormat = data[0]; storageDirty(EE_GENERAL); return 0; }
     case CFG_GEN_USB_MODE:   { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; if (data[0] > 3) return NACK_OUT_OF_RANGE; g_eeGeneral.USBMode = data[0]; storageDirty(EE_GENERAL); return 0; }
@@ -792,6 +947,20 @@ static uint8_t cfgSet(uint16_t id, uint8_t type, const uint8_t* data, uint8_t le
         return rc;
       }
       if (id >= CFG_MOD_BASE && id < CFG_MOD_BASE + (NUM_MODULES << 4)) return modSet(id, type, data, len);  // Set 3c
+      if (id >= CFG_PRE_POT_BASE && id < CFG_PRE_POT_BASE + MAX_POTS) {   // s33 pot/slider check on/off
+        uint8_t i = (uint8_t)(id - CFG_PRE_POT_BASE);
+        if (i >= adcGetMaxInputs(ADC_INPUT_FLEX) || !IS_POT_SLIDER_AVAILABLE(i)) return NACK_UNKNOWN_FIELD;
+        if (type != T_BOOL || len != 1) return NACK_BAD_TYPE;
+        if (data[0]) g_model.potsWarnEnabled |= (potwarnen_t)(1 << i); else g_model.potsWarnEnabled &= (potwarnen_t)~(1 << i);
+        storageDirty(EE_MODEL); return 0;
+      }
+      if (id >= CFG_PRE_SW_BASE && id < CFG_PRE_SW_BASE + 64) {   // s32 pre-flight switch position
+        uint8_t sw = (uint8_t)(id - CFG_PRE_SW_BASE);
+        if (sw >= switchGetMaxAllSwitches() || !SWITCH_WARNING_ALLOWED(sw)) return NACK_UNKNOWN_FIELD;
+        if (type != T_ENUM || len != 1) return NACK_BAD_TYPE;
+        if (data[0] > (IS_CONFIG_3POS(sw) ? 3 : 2)) return NACK_OUT_OF_RANGE;
+        g_model.setSwitchWarning(sw, ueSwwState(sw, data[0])); storageDirty(EE_MODEL); return 0;
+      }
       if (id >= CFG_TRN_BASE)     return cfgSetTrainer(id, type, data, len);   // Set 5 trainer (above CFG_INPUT)
       if (id >= CFG_INPUT_BASE)   return subsystemSet(id, type, data, len);
       if (id >= CFG_SECROW_BASE) return NACK_UNKNOWN_FIELD;      // link rows are read-only
@@ -1124,11 +1293,13 @@ static bool pageRow(uint16_t page, uint16_t idx, RowDef& r, char* buf) {
     switch (idx) {
       case 0: mkField(r, b|TMR_NAME,     T_STR, 0, LEN_TIMER_NAME, 1, "Name", "", nullptr,0, IC_TIMERS); return true;
       case 1: mkField(r, b|TMR_MODE,     T_ENUM, 0,5,1, "Mode", "", OPTS_TMRMODE,6, IC_NONE); return true;
-      case 2: mkField(r, b|TMR_START,    T_U16, 0,3600,5, "Start", "s", nullptr,0, IC_NONE); r.visible=on; return true;
-      case 3: mkField(r, b|TMR_MINBEEP,  T_BOOL, 0,1,1, "Minute beep", "", nullptr,0, IC_NONE); r.visible=on; return true;
-      case 4: mkField(r, b|TMR_COUNTDOWN,T_ENUM, 0,3,1, "Countdown", "", OPTS_COUNTDOWN,4, IC_NONE); r.visible=on; return true;
-      case 5: mkField(r, b|TMR_PERSIST,  T_ENUM, 0,2,1, "Persistent", "", OPTS_PERSIST,3, IC_NONE); r.visible=on; return true;
-      case 6: mkField(r, b|TMR_DIR,      T_ENUM, 0,1,1, "Direction", "", OPTS_TIMERDIR,2, IC_NONE); r.visible=on; return true;
+      // s31 (ADR-0034): EdgeTX's timer switch — the timer counts only while it's on (Strt: it starts the timer).
+      case 2: mkRef(r, b|TMR_SWITCH, DOM_SWITCH, SWSRC_FIRST_IN_MIXES, SWSRC_LAST_IN_MIXES, "Switch", IC_NONE); r.visible=on; return true;
+      case 3: mkField(r, b|TMR_START,    T_U16, 0,3600,5, "Start", "s", nullptr,0, IC_NONE); r.visible=on; return true;
+      case 4: mkField(r, b|TMR_MINBEEP,  T_BOOL, 0,1,1, "Minute beep", "", nullptr,0, IC_NONE); r.visible=on; return true;
+      case 5: mkField(r, b|TMR_COUNTDOWN,T_ENUM, 0,3,1, "Countdown", "", OPTS_COUNTDOWN,4, IC_NONE); r.visible=on; return true;
+      case 6: mkField(r, b|TMR_PERSIST,  T_ENUM, 0,2,1, "Persistent", "", OPTS_PERSIST,3, IC_NONE); r.visible=on; return true;
+      case 7: mkField(r, b|TMR_DIR,      T_ENUM, 0,1,1, "Direction", "", OPTS_TIMERDIR,2, IC_NONE); r.visible=on; return true;
       default: return false;
     }
   }
@@ -1154,9 +1325,11 @@ static bool pageRow(uint16_t page, uint16_t idx, RowDef& r, char* buf) {
         case 3: mkLink(r, CFG_TMRROW_BASE+2, PAGE_TIMER_BASE+2, "Timer 3", IC_TIMERS); return true;
         case 4: mkLink(r, CFG_SECROW_BASE+SEC_TRIMS,    PAGE_TRIMS,    "Trims", IC_TRIMS); return true;
         case 5: mkLink(r, CFG_SECROW_BASE+SEC_THROTTLE, PAGE_THROTTLE, "Throttle", IC_THROTTLE); return true;
-        case 6: mkLink(r, CFG_SECROW_BASE+SEC_OTHER,    PAGE_OTHER,    "Other", IC_GENERAL); return true;
-        case 7: mkLink(r, CFG_SECROW_BASE+SEC_RF_INT, PAGE_MOD_BASE+0, "Internal RF", IC_GENERAL); return true;
-        case 8: mkLink(r, CFG_SECROW_BASE+SEC_RF_EXT, PAGE_MOD_BASE+1, "External RF", IC_GENERAL); return true;
+        case 6: mkLink(r, CFG_SECROW_BASE+SEC_PREFLIGHT, PAGE_PREFLIGHT, "Pre-flight checks", IC_GENERAL); return true;   // s32
+        case 7: mkLink(r, CFG_SECROW_BASE+SEC_OTHER,    PAGE_OTHER,    "Other", IC_GENERAL); return true;
+        case 8: mkLink(r, CFG_SECROW_BASE+SEC_RF_INT, PAGE_MOD_BASE+0, "Internal RF", IC_GENERAL); return true;
+        case 9: mkLink(r, CFG_SECROW_BASE+SEC_RF_EXT, PAGE_MOD_BASE+1, "External RF", IC_GENERAL); return true;
+        case 10: mkLink(r, CFG_SECROW_BASE+SEC_TRAINER, PAGE_MTRAINER, "Trainer", IC_GENERAL); return true;   // s31
         default: return false;
       }
     case PAGE_OUTPUTS:
@@ -1164,6 +1337,65 @@ static bool pageRow(uint16_t page, uint16_t idx, RowDef& r, char* buf) {
       mkLink(r, (uint16_t)(CFG_OUTROW_BASE+idx), (uint16_t)(PAGE_OUT_BASE+idx),
              chLabel((uint8_t)(idx+1), buf), IC_CHANNEL);
       return true;
+    case PAGE_TELEM_ALARMS: {   // s35 (ADR-0037): labelled for the link in use (RSSI dB / RQly % ...), like EdgeTX
+      static char lowL[24], critL[24];
+      rxStatStruct* rx = getRxStatLabels();
+      *appendStr(appendStr(lowL, rx->label), " low alarm") = '\0';          // appendStr doesn't terminate
+      *appendStr(appendStr(critL, rx->label), " critical alarm") = '\0';
+      switch (idx) {
+        case 0: mkField(r, CFG_TEL_WARN, T_U16, 0, 100, 1, lowL,  rx->unit, nullptr,0, IC_TELEM); return true;
+        case 1: mkField(r, CFG_TEL_CRIT, T_U16, 0, 100, 1, critL, rx->unit, nullptr,0, IC_NONE); return true;
+        case 2: mkField(r, CFG_TEL_NOALARM, T_BOOL, 0,1,1, "Disable telemetry alarms", "", nullptr,0, IC_NONE); return true;
+#if defined(VARIO)
+        // s36 (ADR-0038): EdgeTX MODEL › TELEMETRY › Vario. Range/centre rows only once a source is chosen.
+        case 3: { uint8_t n = ueVarioOpts(); mkField(r, CFG_VAR_SOURCE, T_ENUM, 0, n - 1, 1, "Vario source", "", s_varOpts, n, IC_TELEM); return true; }
+        case 4: mkField(r, CFG_VAR_MIN,  T_I16, -17, -3, 1, "Vario range low",  "m/s", nullptr,0, IC_NONE); r.visible = g_model.varioData.source != 0; return true;
+        case 5: mkField(r, CFG_VAR_MAX,  T_I16,   3, 17, 1, "Vario range high", "m/s", nullptr,0, IC_NONE); r.visible = g_model.varioData.source != 0; return true;
+        case 6: mkField(r, CFG_VAR_CMIN, T_I16, -21, 10, 1, "Vario centre low",  "dm/s", nullptr,0, IC_NONE); r.visible = g_model.varioData.source != 0; return true;
+        case 7: mkField(r, CFG_VAR_CMAX, T_I16, -10, 20, 1, "Vario centre high", "dm/s", nullptr,0, IC_NONE); r.visible = g_model.varioData.source != 0; return true;
+        case 8: mkField(r, CFG_VAR_CTONE, T_ENUM, 0,1,1, "Vario centre", "", OPTS_VARCTONE, 2, IC_NONE); r.visible = g_model.varioData.source != 0; return true;
+#endif
+        default: return false;
+      }
+    }
+    case PAGE_PREFLIGHT: {  // s32 (ADR-0035): EdgeTX MODEL SETUP › Pre-start checks — throttle, then each switch
+      bool thrWarn = !g_model.disableThrottleWarning;
+      switch (idx) {
+        case 0: mkField(r, CFG_THR_WARNING, T_BOOL, 0,1,1, "Throttle warning", "", nullptr,0, IC_THROTTLE); return true;
+        case 1: mkField(r, CFG_PRE_THRCUST, T_BOOL, 0,1,1, "Custom throttle position", "", nullptr,0, IC_NONE); r.visible=thrWarn; return true;
+        case 2: mkField(r, CFG_PRE_THRPOS,  T_I16, -100,100,1, "Throttle position", "%", nullptr,0, IC_NONE);
+                r.visible = thrWarn && g_model.enableCustomThrottleWarning; return true;
+        default: {
+          uint8_t nSw = uePreSwitchCount();
+          if (idx >= 3 + nSw) {   // s33: pots & sliders after the switches
+            uint8_t k = (uint8_t)(idx - 3 - nSw);
+            if (k == 0) { mkField(r, CFG_PRE_POTMODE, T_ENUM, 0, 2, 1, "Pots & sliders", "", OPTS_POTWARN, 3, IC_NONE); return true; }
+            int8_t p = uePrePot((uint8_t)(k - 1)); if (p < 0) return false;
+            mkField(r, (uint16_t)(CFG_PRE_POT_BASE + p), T_BOOL, 0, 1, 1,
+                    getAnalogShortLabel(adcGetInputOffset(ADC_INPUT_FLEX) + p), "", nullptr, 0, IC_NONE);
+            r.visible = g_model.potsWarnMode != POTS_WARN_OFF; return true;
+          }
+          int8_t sw = uePreSwitch((uint8_t)(idx - 3)); if (sw < 0) return false;
+          bool three = IS_CONFIG_3POS(sw);
+          mkField(r, (uint16_t)(CFG_PRE_SW_BASE + sw), T_ENUM, 0, three ? 3 : 2, 1, switchGetDefaultName(sw), "",
+                  three ? OPTS_SWW3 : OPTS_SWW2, three ? 4 : 3, IC_NONE);
+          return true;
+        }
+      }
+    }
+    case PAGE_MTRAINER: {   // s31 (ADR-0034): EdgeTX MODEL SETUP › Trainer. Slave PPM rows only in Slave/Jack.
+      bool slave = g_model.trainerData.mode == TRAINER_MODE_SLAVE;
+      uint8_t n = ueTrnModeOpts();
+      switch (idx) {
+        case 0: mkField(r, CFG_MTRN_MODE,    T_ENUM, 0, n-1, 1, "Mode", "", s_trnModeOpts, n, IC_GENERAL); return true;
+        case 1: mkField(r, CFG_MTRN_CHSTART, T_U16, 1, 25, 1, "First channel", "", nullptr,0, IC_NONE); r.visible=slave; return true;
+        case 2: mkField(r, CFG_MTRN_CHCOUNT, T_U16, 4, 8 + MAX_TRAINER_CHANNELS_M8, 1, "Channels", "", nullptr,0, IC_NONE); r.visible=slave; return true;
+        case 3: mkField(r, CFG_MTRN_FRAME,   T_U16, 12500, 40000, 500, "PPM frame", "us", nullptr,0, IC_NONE); r.visible=slave; return true;
+        case 4: mkField(r, CFG_MTRN_DELAY,   T_U16, 100, 800, 50, "PPM delay", "us", nullptr,0, IC_NONE); r.visible=slave; return true;
+        case 5: mkField(r, CFG_MTRN_POL,     T_ENUM, 0, 1, 1, "Polarity", "", OPTS_PPMPOL, 2, IC_NONE); r.visible=slave; return true;
+        default: return false;
+      }
+    }
     case PAGE_TRIMS:
       switch (idx) {
         case 0: mkField(r, CFG_TRIM_INC,      T_ENUM, 0,4,1, "Trim increment", "", OPTS_TRIMINC,5, IC_NONE); return true;
@@ -1175,12 +1407,12 @@ static bool pageRow(uint16_t page, uint16_t idx, RowDef& r, char* buf) {
       switch (idx) {
         case 0: mkField(r, CFG_THR_REVERSED, T_BOOL, 0,1,1, "Reversed", "", nullptr,0, IC_THROTTLE); return true;
         case 1: mkField(r, CFG_THR_TRIM,     T_BOOL, 0,1,1, "Trim", "", nullptr,0, IC_NONE); return true;
-        case 2: mkField(r, CFG_THR_WARNING,  T_BOOL, 0,1,1, "Warning", "", nullptr,0, IC_NONE); return true;
         default: return false;
       }
     case PAGE_OTHER:
       switch (idx) {
         case 0: mkField(r, CFG_JITTER_FILTER, T_ENUM, 0,2,1, "ADC jitter filter", "", OPTS_FILTER,3, IC_NONE); return true;
+        case 1: mkField(r, CFG_USE_GF, T_BOOL, 0,1,1, "Use global functions", "", nullptr,0, IC_NONE); return true;   // s36
         default: return false;
       }
     // Radio Setup (g_eeGeneral scalars) — PRD-radio-settings Set 2. Direct raw fields; typed writes.
@@ -1273,6 +1505,9 @@ static bool pageRow(uint16_t page, uint16_t idx, RowDef& r, char* buf) {
 // re-describes the page. Timer mode toggles its detail rows + summary.
 static bool writeIsStructural(uint16_t id) {
   if (id >= CFG_TMR_BASE && id < CFG_TMRROW_BASE) return (uint8_t)(id & 0x0F) == TMR_MODE;
+  if (id == CFG_MTRN_MODE) return true;   // s31: Slave/Jack shows the PPM rows
+  if (id == CFG_THR_WARNING || id == CFG_PRE_THRCUST || id == CFG_PRE_SETALL || id == CFG_PRE_POTMODE) return true;
+  if (id == CFG_VAR_SOURCE) return true;   // s36: vario range rows appear with a source   // s32/s33: rows/values change
   // SF: changing the function changes which parameter rows exist -> re-describe the page.
   if (id >= CFG_SF_BASE && id < CFG_SF_BASE + MAX_SPECIAL_FUNCTIONS*ITEM_STRIDE)
     return subOf(id,CFG_SF_BASE) == SF_FUNC;
@@ -1299,7 +1534,7 @@ static volatile bool s_companionActive = false;            // set true once HELL
 // Negotiated peer capabilities (docs/protocol/PROTOCOL-V4.md §3.1), from the app's HELLO. Feature
 // emit is gated on the INTERSECTION of what this build supports and what the app advertised, so a
 // v3 (no-caps) app still gets the legacy wire. This build's own advertised caps:
-static const uint32_t UE_LOCAL_CAPS = CAP_STRUCTURED | CAP_AUDIO | CAP_TELEM_TYPED | CAP_MODEL_FILE | CAP_CALIB;
+static const uint32_t UE_LOCAL_CAPS = CAP_STRUCTURED | CAP_AUDIO | CAP_TELEM_TYPED | CAP_MODEL_FILE | CAP_CALIB | CAP_PUSH_ACK;
 
 static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len);   // fwd decl (defined below) — for ueCalTick
 
@@ -1381,6 +1616,7 @@ static void ueStartModelPull(uint8_t which) {
     // PRD-radio-settings). RADIO_SETTINGS_YAML_PATH = "/RADIO/radio.yml".
     strncpy(path, RADIO_SETTINGS_YAML_PATH, sizeof(path) - 1); path[sizeof(path) - 1] = 0;
     fn = "radio.yml"; kind = BULK_RADIO_YAML;
+    storageCheck(true);   // s36: flush ACKed radio-setting writes (global functions) before streaming, as s22 does for models
   } else {
 #if defined(STORAGE_MODELSLIST)
     fn = g_eeGeneral.currModelFilename;
@@ -1478,6 +1714,14 @@ static void ueModelPushAck(uint16_t xfer, uint8_t status) {
   uint8_t p[3] = { (uint8_t)(xfer & 0xFF), (uint8_t)(xfer >> 8), status };
   emitMsg(MSG_MODEL_PUSH_ACK, p, sizeof(p));
 }
+// ADR-0032 (s29): per-chunk DATA ACK {u16 xfer, u8 status=0, u8 0xDA, u32 bytesWritten}. The phone sends the next
+// chunk only after this, so the 256-B RX ring can never overflow (it did whenever an SD write stalled the task →
+// "push out of sequence"). 0xDA can't be a restore-ACK filename length (<= LEN_MODEL_FILENAME).
+static void ueModelPushDataAck(uint16_t xfer, uint32_t written) {
+  uint8_t p[8] = { (uint8_t)(xfer & 0xFF), (uint8_t)(xfer >> 8), 0, 0xDA,
+                   (uint8_t)written, (uint8_t)(written >> 8), (uint8_t)(written >> 16), (uint8_t)(written >> 24) };
+  emitMsg(MSG_MODEL_PUSH_ACK, p, sizeof(p));
+}
 // ADR-0027: a restore's success ACK carries the final filename the radio chose, so the app can reconcile
 // when the requested slot was taken and a fresh one was used: {u16 xfer, u8 status, u8 nameLen, name}.
 static void ueModelPushAckNamed(uint16_t xfer, uint8_t status, const char* fn) {
@@ -1573,12 +1817,15 @@ static void ueModelPushData(const Message& m) {
   uint32_t off  = (uint32_t)m.payload[2] | ((uint32_t)m.payload[3]<<8) | ((uint32_t)m.payload[4]<<16) | ((uint32_t)m.payload[5]<<24);
   uint16_t len  = (uint16_t)(m.payload[6] | (m.payload[7] << 8));
   if (!s_pushActive || xfer != s_pushXferId) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
+  // ADR-0032: the phone resent the chunk we already wrote (its ACK was lost) — confirm again, don't write twice.
+  if (len > 0 && off + len == s_pushOffset) { ueModelPushDataAck(xfer, s_pushOffset); return; }
   if (off != s_pushOffset || (uint32_t)(8 + len) > m.len) { ueModelPushDiscard(); ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
   const uint8_t* d = m.payload + 8;
   UINT bw = 0;
   if (f_write(&s_pushFile, d, len, &bw) != FR_OK || bw != len) { ueModelPushDiscard(); ueModelPushAck(xfer, NACK_PUSH_IO); return; }
   s_pushCrc = crc16_update(s_pushCrc, d, len);
   s_pushOffset += len;
+  ueModelPushDataAck(xfer, s_pushOffset);   // ADR-0032: ready for the next chunk
 }
 
 static void ueModelPushEnd(const Message& m) {
@@ -1718,6 +1965,79 @@ static uint8_t ueModelSelect(const char* name) {
   return 0;
 }
 #endif
+// s36 (ADR-0038): create a blank model the way the radio's own Model Select does, then make it active.
+// Same native safety gate as SELECT (throttle must be idle).
+#if defined(STORAGE_MODELSLIST)
+static uint8_t ueModelNew() {
+  if (isThrottleWarningAlertNeeded()) return NACK_UNSAFE;
+  storageFlushCurrentModel();
+  storageCheck(true);
+  MainWindow::instance()->enableWidgetRefresh(false);           // pause refresh across the g_model reset
+  LayoutFactory::deleteCustomScreens();
+  LayoutFactory::deleteTopBarWidgets();
+  auto newCell = modelslist.addModel("", false);                // colorlcd ModelLabelsWindow::newModel(), blank template
+  modelslist.setCurrentModel(newCell);
+  createModel();                                                // EdgeTX: setModelDefaults + file + currModelFilename
+  LayoutFactory::loadDefaultLayout();
+  LayoutFactory::loadCustomScreens();
+  MainWindow::instance()->enableWidgetRefresh(true);
+  storageDirty(EE_GENERAL);
+  storageCheck(true);
+  return 0;
+}
+#else
+static uint8_t ueModelNew() {
+  if (isThrottleWarningAlertNeeded()) return NACK_UNSAFE;
+  int idx = ueNextFreeModelIdx(); if (idx < 0) return NACK_PUSH_IO;
+  storageFlushCurrentModel();
+  storageCheck(true);
+  preModelLoad();
+  g_eeGeneral.currModel = (uint8_t)idx;
+  setModelDefaults((uint8_t)idx);                               // EdgeTX defaults: template, vendor module, "MODELnn"
+  storageDirty(EE_GENERAL | EE_MODEL);
+  storageCheck(true);                                           // writes modelNN.yml + radio.yml
+  postModelLoad(false);
+  return 0;
+}
+#endif
+
+// s36 (ADR-0038): one GLOBAL special function, written atomically with EdgeTX's own radio YAML parser. The payload is
+// the entry as radio.yml spells it ("customFn:\n  <i>:\n    swtch: ...\n    func: ...\n    def: ..."); the entry is
+// cleared first, so an empty body deletes it. Only that entry may appear, and its function must be available as a
+// global function in this build, else the entry is restored and the write refused.
+static uint8_t ueGfApply(uint8_t idx, int16_t swRaw, int16_t srcRaw, const uint8_t* y, uint16_t n) {
+  if (idx >= MAX_SPECIAL_FUNCTIONS || n < 10 || n > 200) return NACK_BAD_LENGTH;
+  static char buf[208];
+  memcpy(buf, y, n); buf[n] = 0;
+  if (strncmp(buf, "customFn:\n", 10) != 0) return NACK_BAD_TYPE;
+  char want[8]; char* w = appendStr(want, "  "); w = appendInt(w, idx); *w++ = ':'; *w = 0;
+  for (char* line = buf; *line; ) {                                 // shape check: no other top-level key / entry
+    char* nl = strchr(line, '\n'); size_t L = nl ? (size_t)(nl - line) : strlen(line);
+    uint8_t ind = 0; while (ind < L && line[ind] == ' ') ind++;
+    if (L > 0 && ind == 0 && strncmp(line, "customFn:", 9) != 0) return NACK_BAD_TYPE;
+    if (ind == 2 && (strncmp(line, want, strlen(want)) != 0 || L != strlen(want))) return NACK_BAD_TYPE;
+    if (!nl) break; line = nl + 1;
+  }
+  CustomFunctionData saved = g_eeGeneral.customFn[idx];
+  if (swRaw != 0x7FFF && (swRaw < SWSRC_FIRST || swRaw > SWSRC_LAST)) return NACK_OUT_OF_RANGE;
+  memset(&g_eeGeneral.customFn[idx], 0, sizeof(CustomFunctionData));
+  if (swRaw == 0) { storageDirty(EE_GENERAL); return 0; }           // no trigger = deleted (EdgeTX lists only triggered ones)
+  YamlTreeWalker tree; tree.reset(get_radiodata_nodes(), (uint8_t*)&g_eeGeneral);
+  YamlParser yp; yp.init(YamlTreeWalker::get_parser_calls(), &tree); yp.set_eof();
+  yp.parse(buf, (unsigned)n);
+  CustomFunctionData* cf = &g_eeGeneral.customFn[idx];
+  // The radio names the references (ADR-0028 split): trigger switch, and the source of Volume/Backlight/Play Value.
+  cf->swtch = (swRaw == 0x7FFF) ? saved.swtch : swRaw;
+  uint8_t fn = CFN_FUNC(cf);
+  if (srcRaw != 0x7FFF && (fn == FUNC_VOLUME || fn == FUNC_BACKLIGHT || fn == FUNC_PLAY_VALUE)) {
+    if (srcRaw < 0 || srcRaw > MIXSRC_LAST) { *cf = saved; return NACK_OUT_OF_RANGE; }
+    CFN_PARAM(cf) = srcRaw;
+  }
+  if (cf->swtch && !isAssignableFunctionAvailable(fn, false)) { *cf = saved; return NACK_OUT_OF_RANGE; }
+  storageDirty(EE_GENERAL);
+  return 0;
+}
+
 // Read a {u8 nameLen, name} payload into buf (bounded). Returns false on a bad/empty/oversized name.
 static bool ueReadModelName(const Message& m, char* buf, uint8_t cap) {
   if (m.len < 1) return false;
@@ -1866,26 +2186,52 @@ static const uint16_t CLASS2_BYTES_PER_TICK = 400;
 static const uint16_t RAW_BYTES_PER_TICK    = 192;   // hard cap on raw passthrough per tick (docs/39)
 static uint16_t s_class2Budget = 0;   // refilled each tick
 
+// s27: usbSerialPutc() never checks for room, so writing more than the CDC TX ring holds OVERWROTE bytes not yet
+// sent (QX7 / STM32F2 ring = 512 B: model pulls arrived with most chunks missing → CRC fail; field report
+// 2026-10-12). A frame now goes out only WHOLE: wait briefly for room, else drop it whole — never a torn frame. If
+// the phone stops reading (ring stays full) we stop waiting until it drains again, so the main task never stalls.
+static bool s_txStalled = false;
+static bool ueTxRoom(size_t n)
+{
+  uint32_t room = usbSerialFreeSpace();
+  if (room >= n) { if (room > 256) s_txStalled = false; return true; }
+  if (s_txStalled) return false;
+  uint32_t t0 = time_get_ms();
+  while (usbSerialFreeSpace() < n) if (time_get_ms() - t0 >= 20) { s_txStalled = true; return false; }
+  return true;
+}
 static void emitBytes(const uint8_t* b, size_t n)
 {
+  if (!ueTxRoom(n)) return;
   for (size_t i = 0; i < n; ++i) usbSerialPutc(nullptr, b[i]);
 }
 
-// Build one control/reply frame and emit it. Folds the repeated
-// `encodeFrame(type, s_seq++, p, len, f, sizeof(f)); emitBytes(f, n);` boilerplate that
-// appeared ~10× across onFrame() — a size-only refactor (docs/30 shrink pass), behaviour
-// identical. The 64-byte local is fine: all control/reply frames are small.
+// Build one control/reply frame and emit it, STREAMED byte by byte (no frame buffer). s23: the old version
+// encoded into a 64-byte local; encodeFrame() returns 0 when the escaped frame doesn't fit, so any reply over
+// ~55 bytes was SILENTLY never sent — an SD_LIST of a non-empty /LOGS or /MODELS (BUG-007, "Reading /LOGS…"
+// forever), long BULK_BEGIN names, long audio paths. Same wire format as encodeFrame (SOF, escaped header +
+// payload + CRC16-CCITT), any length up to MAX_PAYLOAD, and no stack/RAM cost.
+static void emitEsc(uint8_t b) {
+  if (b == SOF || b == ESC) { usbSerialPutc(nullptr, ESC); usbSerialPutc(nullptr, (uint8_t)(b ^ ESC_XOR)); }
+  else usbSerialPutc(nullptr, b);
+}
 static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len)
 {
-  uint8_t f[64];
-  size_t n = encodeFrame(type, s_seq++, payload, len, f, sizeof(f));
-  emitBytes(f, n);
+  if (len > MAX_PAYLOAD || (len && !payload)) return;
+  if (!ueTxRoom(1 + 2 * (HEADER_LEN + len + 2))) return;   // s27: whole frame or nothing (worst case: all escaped)
+  const uint8_t hdr[HEADER_LEN] = { PROTO_VERSION, type, s_seq++, (uint8_t)(len & 0xFF), (uint8_t)(len >> 8) };
+  uint16_t crc = crc16_update(crc16_update(0xFFFF, hdr, HEADER_LEN), payload, len);
+  usbSerialPutc(nullptr, SOF);
+  for (uint8_t i = 0; i < HEADER_LEN; ++i) emitEsc(hdr[i]);
+  for (uint16_t i = 0; i < len; ++i) emitEsc(payload[i]);
+  emitEsc((uint8_t)(crc & 0xFF)); emitEsc((uint8_t)(crc >> 8));
 }
 
 // Class-2 emit: only if this tick's budget allows; decrements the budget.
 static bool emitClass2(const uint8_t* b, size_t n)
 {
   if (n > s_class2Budget) return false;   // over budget this tick — skip (loss-tolerant)
+  if (usbSerialFreeSpace() < n) return false;   // s27: no room right now — skip, never wait (loss-tolerant)
   emitBytes(b, n);
   s_class2Budget -= (uint16_t)n;
   return true;
@@ -2322,6 +2668,28 @@ static void onFrame(const Message& m, void*)
     p[0] = cnt;
     n = encodeFrame(MSG_CAPS, s_seq++, p, (uint16_t)o, f, sizeof(f)); emitBytes(f, n);
   }
+  else if (m.type == MSG_GET_RADIO_INFO) {
+    // ADR-0033 (s30): who this radio is + which Special Functions THIS build offers. uid = the STM32 96-bit
+    // factory unique ID (the app hashes it into a per-radio id; it never leaves the phone raw). The SF list is
+    // EdgeTX's own YAML name table filtered by isAssignableFunctionAvailable(), so the app's picker matches the
+    // radio's menu exactly (HAPTIC/LUA/RGB_LED/... are build options) with no #if drift on the phone.
+    static uint8_t rp[2 + 12 + 1 + 40 * 24];
+    size_t o = 0;
+    rp[o++] = 1;    // ver
+    rp[o++] = 12;   // uidLen
+    for (uint8_t w = 0; w < 3; ++w)
+      for (uint8_t b = 0; b < 4; ++b) rp[o++] = (uint8_t)(cpu_uid[w] >> (8 * b));
+    size_t cntAt = o++; uint8_t cnt = 0;
+    for (uint8_t i = 0; enum_Functions[i].str && cnt < 40; ++i) {
+      if (!isAssignableFunctionAvailable(enum_Functions[i].id, true)) continue;
+      size_t nl = strlen(enum_Functions[i].str);
+      if (nl > 22) continue;
+      rp[o++] = (uint8_t)enum_Functions[i].id; rp[o++] = (uint8_t)nl;
+      memcpy(rp + o, enum_Functions[i].str, nl); o += nl; cnt++;
+    }
+    rp[cntAt] = cnt;
+    emitMsg(MSG_RADIO_INFO, rp, (uint16_t)o);
+  }
   else if (m.type == MSG_GET_TELECAT) {
     // Telemetry sensor catalog (docs/15): {u8 count, [u16 id, u8 unit, u8 prec, str name]}.
     // The APP formats values + owns the unit->string table (no unit strings on the wire).
@@ -2382,6 +2750,52 @@ static void onFrame(const Message& m, void*)
     p[0] = cnt;
     emitMsg(MSG_SD_LIST_RESP, p, (uint16_t)o);
   }
+  else if (m.type == MSG_SD_LIST_NEWEST) {
+    // ADR-0031 (s24): the `max` (<= 8) NEWEST files of a directory strictly older than the cursor (beforeTs,
+    // beforeName), newest first — so a /LOGS with hundreds of logs pages in 8s, newest flights first. One pass over
+    // the directory keeping a small sorted top-N; ts = FAT fdate<<16 | ftime (name breaks ties). Files only.
+    static struct { uint32_t ts, size; uint8_t nl; char name[48]; } top[8];
+    static uint8_t rp[2 + 8 * (4 + 4 + 1 + 48)];
+    char path[80], before[48]; uint8_t o = 0;
+    uint8_t pl = m.len ? m.payload[o++] : 0;
+    if (pl >= sizeof(path) || (uint32_t)(1 + pl + 6) > m.len) pl = 0;
+    for (uint8_t i = 0; i < pl; ++i) path[i] = (char)m.payload[o++];
+    path[pl] = 0;
+    uint8_t mx = pl ? m.payload[o++] : 0; if (mx > 8) mx = 8;
+    uint32_t bts = pl ? (uint32_t)m.payload[o] | ((uint32_t)m.payload[o+1]<<8) | ((uint32_t)m.payload[o+2]<<16) | ((uint32_t)m.payload[o+3]<<24) : 0;
+    o += 4;
+    uint8_t bnl = (pl && o < m.len) ? m.payload[o++] : 0; if (bnl >= sizeof(before) || (uint32_t)(o + bnl) > m.len) bnl = 0;
+    for (uint8_t i = 0; i < bnl; ++i) before[i] = (char)m.payload[o + i];
+    before[bnl] = 0;
+    uint8_t n = 0; bool more = false;
+    DIR dir; FILINFO fno;
+    if (pl && mx && f_opendir(&dir, path) == FR_OK) {
+      uint16_t guard = 0;
+      while (++guard <= 2000 && f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+        if (fno.fattrib & AM_DIR) continue;
+        uint32_t ts = ((uint32_t)fno.fdate << 16) | fno.ftime;
+        uint8_t nl = 0; while (nl < 47 && fno.fname[nl]) nl++;
+        // strictly older than the cursor: (ts, name) < (bts, before); an empty `before` means "no cursor name"
+        if (ts > bts || (ts == bts && (bnl == 0 || strncmp(fno.fname, before, 48) >= 0))) continue;
+        // insert into the newest-first top list (descending (ts, name))
+        uint8_t k = n;
+        while (k > 0 && (top[k-1].ts < ts || (top[k-1].ts == ts && strncmp(top[k-1].name, fno.fname, 48) < 0))) k--;
+        if (k >= mx) { more = true; continue; }
+        if (n == mx) more = true; else n++;
+        for (uint8_t j = n - 1; j > k; --j) top[j] = top[j-1];
+        top[k].ts = ts; top[k].size = (uint32_t)fno.fsize; top[k].nl = nl;
+        memcpy(top[k].name, fno.fname, nl); top[k].name[nl] = 0;
+      }
+      f_closedir(&dir);
+    }
+    uint16_t r = 0; rp[r++] = n; rp[r++] = more ? 1 : 0;
+    for (uint8_t i = 0; i < n; ++i) {
+      uint32_t v = top[i].size; rp[r++] = v; rp[r++] = v >> 8; rp[r++] = v >> 16; rp[r++] = v >> 24;
+      v = top[i].ts;            rp[r++] = v; rp[r++] = v >> 8; rp[r++] = v >> 16; rp[r++] = v >> 24;
+      rp[r++] = top[i].nl; memcpy(rp + r, top[i].name, top[i].nl); r += top[i].nl;
+    }
+    emitMsg(MSG_SD_LIST_NEWEST_RESP, rp, r);   // any length since s23
+  }
   else if (m.type == MSG_SD_PULL) {
     // FL-1 (s12): {u8 pathLen, path} → stream that SD file via BULK (kind=BULK_LOG). Read-only.
     char path[80]; uint8_t pl = m.len ? m.payload[0] : 0;
@@ -2404,6 +2818,16 @@ static void onFrame(const Message& m, void*)
     else if (m.type == MSG_MODEL_COPY)   reason = ueModelCopy(nm);
     else if (m.type == MSG_MODEL_DELETE) reason = ueModelDelete(nm);
     else                                 reason = ueModelSelect(nm);
+    if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
+    else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
+  }
+  else if (m.type == MSG_MODEL_NEW || m.type == MSG_GF_SET) {   // s36 (ADR-0038)
+    uint8_t reason;
+    if (!s_link.companionInputAllowed()) reason = NACK_NOT_ATTACHED;
+    else if (m.type == MSG_MODEL_NEW) reason = ueModelNew();
+    else if (m.len < 5) reason = NACK_BAD_LENGTH;
+    else reason = ueGfApply(m.payload[0], (int16_t)(m.payload[1] | (m.payload[2] << 8)), (int16_t)(m.payload[3] | (m.payload[4] << 8)),
+                            m.payload + 5, (uint16_t)(m.len - 5));
     if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
     else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
   }
@@ -2732,9 +3156,16 @@ extern "C" void ultraedgeCompanionTick()
     UE_CRUMB(42);   // per-tick SD f_read from timer-task context (bulk streaming)
     uint16_t bulkSent = 0;
     while (s_bulkActive && bulkSent < BULK_BYTES_PER_TICK) {
-      if (s_class2Budget < (uint16_t)(BULK_CHUNK + 32)) break;   // save the rest for next tick
+      // s27: size the chunk so its frame fits BOTH the class-2 budget and the free USB TX room even if every byte
+      // had to be escaped (frame <= 1 + 2*(5 + 8 + chunk + 2)); otherwise wait for the next tick — data is only
+      // read from SD when it can be sent, so nothing is ever skipped.
+      uint32_t room = usbSerialFreeSpace(); if (room > s_class2Budget) room = s_class2Budget;
+      uint32_t fit = room > 31 + 64 ? (room - 31) / 2 : 0;
+      uint16_t want = fit < BULK_CHUNK ? (uint16_t)fit : BULK_CHUNK;
+      if (want < 32 && s_bulkTotal - s_bulkOffset > want) break;   // too little room this tick
+      if (want == 0) break;
       uint8_t chunk[BULK_CHUNK]; UINT br = 0;
-      FRESULT r = f_read(&s_bulkFile, chunk, BULK_CHUNK, &br);
+      FRESULT r = f_read(&s_bulkFile, chunk, want, &br);
       if (r != FR_OK) {
         uint8_t ab[3] = { (uint8_t)(s_bulkXferId & 0xFF), (uint8_t)(s_bulkXferId >> 8), 2 /*read error*/ };
         emitMsg(MSG_BULK_ABORT, ab, sizeof(ab)); f_close(&s_bulkFile); s_bulkActive = false; break;
@@ -2747,10 +3178,12 @@ extern "C" void ultraedgeCompanionTick()
         p[o++] = s_bulkOffset & 0xFF; p[o++] = (s_bulkOffset>>8)&0xFF; p[o++] = (s_bulkOffset>>16)&0xFF; p[o++] = (s_bulkOffset>>24)&0xFF;
         p[o++] = br & 0xFF; p[o++] = (br >> 8) & 0xFF;
         for (UINT k = 0; k < br; ++k) p[o++] = chunk[k];
-        n = encodeFrame(MSG_BULK_DATA, s_seq++, p, (uint16_t)o, f, sizeof(f)); emitClass2(f, n);
+        n = encodeFrame(MSG_BULK_DATA, s_seq++, p, (uint16_t)o, f, sizeof(f));
+        for (size_t k = 0; k < n; ++k) usbSerialPutc(nullptr, f[k]);   // fits: sized above against free room
+        s_class2Budget -= (uint16_t)(n < s_class2Budget ? n : s_class2Budget);
         s_bulkOffset += br; bulkSent += (uint16_t)br;
       }
-      if (br < BULK_CHUNK || s_bulkOffset >= s_bulkTotal) {
+      if (br < want || s_bulkOffset >= s_bulkTotal) {
         // EOF → BULK_END {u16 xfer_id, u8 status, u16 crc16}  (the one checksum, CRC16-CCITT)
         uint16_t fin = s_bulkCrc;
         uint8_t p[2 + 1 + 2]; size_t o = 0;

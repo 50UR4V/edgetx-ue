@@ -62,6 +62,14 @@ Once `arm-none-eabi-gcc` is on your `PATH`, the same `cmake … && cmake --build
 
 ---
 
+## 1.1.18 beta builds (this branch)
+
+The 1.1.18 Pocket, Zorro and QX7 binaries are **companion builds**: add `-DUI_COMPANION=YES` to the radio's flags
+below (it drops the radio's own model/radio-settings menus to make room). TX16S is a full build (no extra flag).
+`radio/src/thirdparty/ultraedge/ue_version.h` sets the version label shown on the radio's Version page.
+
+---
+
 ## Per-radio flags
 
 `-DPCB` / `-DPCBREV` select the board; the rest are the **flash-fit** levers (Pocket/QX7 are 512 KB-class

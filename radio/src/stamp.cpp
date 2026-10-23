@@ -53,7 +53,30 @@
 #define WITH_FACTORY_RELEASE(base) base
 #endif
 
-#if defined(COLORLCD)
+// UltraEdge builds (s28, owner 2026-10-12): the Version page names the UltraEdge firmware, its version and variant, and
+// the EdgeTX base it is built on. Display strings only — the bootloader/flasher identify firmware by firmware_version
+// below ("edgetx-…"), which is unchanged. Stock builds (no USB_COMPANION) are byte-identical.
+// The label comes from thirdparty/ultraedge/ue_version.h, written by build-fw.sh before every build (a header, not a
+// CMake flag: EdgeTX's superbuild only forwards -D flags on the inner project's FIRST configure).
+#if defined(USB_COMPANION) && __has_include("thirdparty/ultraedge/ue_version.h")
+  #include "thirdparty/ultraedge/ue_version.h"
+#endif
+#if defined(USB_COMPANION) && defined(UE_FW_VERSION)
+  #if defined(UI_COMPANION)
+    #define UE_VARIANT " companion"
+  #else
+    #define UE_VARIANT ""
+  #endif
+  #if defined(COLORLCD)
+    const char fw_stamp[]   = "FW" TAB ": ultraedge-" FLAVOUR;
+    const char vers_stamp[] = "VERS" TAB ": UltraEdge " UE_FW_VERSION UE_VARIANT " (EdgeTX " VERSION ", " GIT_STR ")";
+    const char date_stamp[] = "DATE" TAB ": " DATE;
+    const char time_stamp[] = "TIME" TAB ": " TIME;
+  #else
+    const char vers_stamp[] = "FW" TAB ": ultraedge-" FLAVOUR "\036VERS" TAB ": UE " UE_FW_VERSION UE_VARIANT
+                              "\036BASE" TAB ": EdgeTX " VERSION "\036GIT#" TAB ": " GIT_STR "\036DATE" TAB ": " DATE " " TIME;
+  #endif
+#elif defined(COLORLCD)
   const char fw_stamp[]     = "FW" TAB ": edgetx-" FLAVOUR;
   #if defined(VERSION_TAG) // tagged release, possibly mfg build
     const char vers_stamp[] = "VERS" TAB ": " WITH_FACTORY_RELEASE(VERSION_TAG) " \"" CODENAME "\"";

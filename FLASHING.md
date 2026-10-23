@@ -1,20 +1,22 @@
-# Flashing UltraEdge companion firmware — v1.1.2
+# Flashing UltraEdge companion firmware — 1.1.18 (BETA)
 
 These `.bin` files are **EdgeTX firmware with the UltraEdge companion overlay** built in. Flash the file
-that matches your radio, then pair it with the **UltraEdge** Android app over USB.
+that matches your radio, then pair it with the **UltraEdge app 1.4.0 beta** (Google Play open testing) over USB.
 
-> **Verified radios (this release):** RadioMaster **Pocket**, RadioMaster **Zorro**, FrSky **QX7 / QX7 Access** and
-> RadioMaster **TX16S** (colour LCD), all checked on real hardware. Other radios are **build-it-yourself**; see
-> `BUILD-HOWTO.md`. More prebuilt targets are added as each is verified on hardware.
+> **Beta.** Back up your SD card and bench-test with props off before flying. The stable firmware is v1.1.2.
+>
+> **Companion builds (Pocket, Zorro, QX7):** the radio's own model and radio-settings menus are removed; the phone
+> holds them. The radio still flies, shows its main view and lets you pick a model. To get the menus back, flash
+> v1.1.2 or stock EdgeTX again. TX16S is a full build.
 
-| File | Radio | MCU | Notes |
+| File | Radio | MCU | Build |
 |---|---|---|---|
-| `edgetx-ue-radiomaster-pocket-v1.1.2.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
-| `edgetx-ue-frsky-qx7-v1.1.2.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
-| `edgetx-ue-radiomaster-tx16s-v1.1.2.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | Color-LCD target. Known: telemetry refresh slower than mono. |
-| `edgetx-ue-radiomaster-zorro-v1.1.2.bin` | RadioMaster Zorro | STM32F407xE (512 KB) | ✅ Verified. |
+| `edgetx-ue-radiomaster-pocket-v1.1.18-companion.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Companion |
+| `edgetx-ue-radiomaster-zorro-v1.1.18-companion.bin` | RadioMaster Zorro | STM32F407xE (512 KB) | Companion |
+| `edgetx-ue-frsky-qx7-v1.1.18-companion.bin` | FrSky QX7 / QX7 Access | STM32F205 | Companion |
+| `edgetx-ue-radiomaster-tx16s-v1.1.18.bin` | RadioMaster TX16S | STM32F407 (2 MB, colour LCD) | Full |
 
-Firmware ↔ app compatibility: **UE Protocol v4**. Use UltraEdge app **1.2.13 or newer**.
+Firmware ↔ app compatibility: **UE Protocol v4**. Use the UltraEdge app **1.4.0 beta**.
 Verify your download against `SHA256SUMS.txt`:
 
 ```bash
@@ -35,6 +37,8 @@ firmware only; your models/settings on the SD card are untouched, but a backup i
 ### B. Radio's built-in SD flasher (no computer)
 1. Copy the `.bin` into the **`/FIRMWARE`** folder on the radio's SD card.
 2. On the radio: long-press **MENU → SD-CARD → FIRMWARE →** your `.bin` **→ Flash firmware**.
+   A companion build has no SD-CARD menu, so use the bootloader instead: power on holding both horizontal
+   trims inward, choose **Write Firmware**, pick the `.bin`. Use this to go back to v1.1.2 too.
 
 ### C. Desktop (STM32CubeProgrammer / dfu-util)
 1. Radio into DFU mode (both horizontal trims inward while powering on), plug USB.
