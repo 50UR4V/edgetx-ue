@@ -1,20 +1,24 @@
-# Flashing UltraEdge companion firmware — v1.1.2
+# Flashing UltraEdge firmware — v1.1.2.1
 
 These `.bin` files are **EdgeTX firmware with the UltraEdge companion overlay** built in. Flash the file
 that matches your radio, then pair it with the **UltraEdge** Android app over USB.
 
-> **Verified radios (this release):** RadioMaster **Pocket**, RadioMaster **Zorro**, FrSky **QX7 / QX7 Access** and
+> **What's new in v1.1.2.1:** the radio's Version page now names the UltraEdge firmware: `FW: ultraedge-<radio>`,
+> `VERS: UE 1.1.2.1`, `GIT#` (the UltraEdge source commit) and `DATE` (when it was built). Everything else is
+> identical to v1.1.2. The `.txt` next to each `.bin` lists exactly what that radio will show.
+>
+> **Verified radios (v1.1.2 feature set):** RadioMaster **Pocket**, RadioMaster **Zorro**, FrSky **QX7 / QX7 Access** and
 > RadioMaster **TX16S** (colour LCD), all checked on real hardware. Other radios are **build-it-yourself**; see
 > `BUILD-HOWTO.md`. More prebuilt targets are added as each is verified on hardware.
 
 | File | Radio | MCU | Notes |
 |---|---|---|---|
-| `edgetx-ue-radiomaster-pocket-v1.1.2.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
-| `edgetx-ue-frsky-qx7-v1.1.2.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
-| `edgetx-ue-radiomaster-tx16s-v1.1.2.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | Color-LCD target. Known: telemetry refresh slower than mono. |
-| `edgetx-ue-radiomaster-zorro-v1.1.2.bin` | RadioMaster Zorro | STM32F407xE (512 KB) | ✅ Verified. |
+| `edgetx-ue-radiomaster-pocket-v1.1.2.1.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
+| `edgetx-ue-frsky-qx7-v1.1.2.1.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
+| `edgetx-ue-radiomaster-tx16s-v1.1.2.1.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | Color-LCD target. Known: telemetry refresh slower than mono. |
+| `edgetx-ue-radiomaster-zorro-v1.1.2.1.bin` | RadioMaster Zorro | STM32F407xE (512 KB) | ✅ Verified. |
 
-Firmware ↔ app compatibility: **UE Protocol v4**. Use UltraEdge app **1.2.13 or newer**.
+Firmware ↔ app compatibility: **UE Protocol v4**. Use UltraEdge app **1.3.0 or newer** (Google Play).
 Verify your download against `SHA256SUMS.txt`:
 
 ```bash
@@ -41,6 +45,8 @@ firmware only; your models/settings on the SD card are untouched, but a backup i
 2. Flash the `.bin` at address `0x08000000` with your usual STM32 DFU tool.
 
 ## After flashing
+0. Check the radio's **Version** page (SYS ▸ Version): it should match the `.txt` for your radio (`ultraedge-…`,
+   `UE 1.1.2.1`, GIT#, DATE). Include those lines in any bug report.
 1. The radio reboots into EdgeTX as normal — it flies exactly as stock EdgeTX. The UltraEdge overlay is
    **dormant until a phone is connected**; unplug the phone and nothing about how the radio flies changes.
 2. Install the **UltraEdge** app (Google Play), plug the phone into the radio's USB port, allow the USB
