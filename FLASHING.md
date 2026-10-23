@@ -7,14 +7,14 @@ that matches your radio, then pair it with the **UltraEdge** Android app over US
 > `VERS: UE 1.1.2.1`, `GIT#` (the UltraEdge source commit) and `DATE` (when it was built). Everything else is
 > identical to v1.1.2. The `.txt` next to each `.bin` lists exactly what that radio will show.
 >
-> **Verified radios (v1.1.2 feature set):** RadioMaster **Pocket**, RadioMaster **Zorro**, FrSky **QX7 / QX7 Access** and
+> **Verified radios (v1.1.2 feature set):** RadioMaster **Pocket**, RadioMaster **Zorro**, FrSky **QX7 / QX7S (not the ACCESS model)** and
 > RadioMaster **TX16S** (colour LCD), all checked on real hardware. Other radios are **build-it-yourself**; see
 > `BUILD-HOWTO.md`. More prebuilt targets are added as each is verified on hardware.
 
 | File | Radio | MCU | Notes |
 |---|---|---|---|
 | `edgetx-ue-radiomaster-pocket-v1.1.2.1.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
-| `edgetx-ue-frsky-qx7-v1.1.2.1.bin` | FrSky QX7 / QX7 Access | STM32F205 | |
+| `edgetx-ue-frsky-qx7-v1.1.2.1.bin` | FrSky QX7 / QX7S (not ACCESS) | STM32F205 | |
 | `edgetx-ue-radiomaster-tx16s-v1.1.2.1.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | Color-LCD target. Known: telemetry refresh slower than mono. |
 | `edgetx-ue-radiomaster-zorro-v1.1.2.1.bin` | RadioMaster Zorro | STM32F407xE (512 KB) | ✅ Verified. |
 

@@ -78,7 +78,7 @@ raw-telemetry passthrough uses EdgeTX's LUA-gated TelemetryQueue and won't compi
 | Radio | Key flags | Notes |
 |---|---|---|
 | RadioMaster **Pocket** | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified. Internal CROSSFIRE, so external PXX1 is dropped for space. ~10 KB flash headroom. |
-| FrSky **QX7 / QX7 Access** | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES` | ✅ Verified. Internal module **is** XJT/PXX1 — keep `PXX1=YES`. |
+| FrSky **QX7 / QX7S (not the ACCESS model)** | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES` | ✅ Verified. Internal module **is** XJT/PXX1 — keep `PXX1=YES`. |
 | RadioMaster **TX16S** | `-DPCB=X10 -DPCBREV=TX16S -DUSB_COMPANION=ON` | ✅ Verified (v1.1.2). First color-LCD target; 2 MB flash so no trims needed. Prebuilt in Releases. |
 | RadioMaster **Zorro** | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified (v1.1.2). Mono, Pocket-twin; tight flash fit. |
 

@@ -49,7 +49,7 @@ follow [`FLASHING.md`](FLASHING.md).
 | Radio | MCU | Status (v1.1.2) |
 |---|---|---|
 | RadioMaster **Pocket** | STM32F407 | ✅ Verified — prebuilt in Releases |
-| FrSky **QX7 / QX7 Access** | STM32F205 | ✅ Verified — prebuilt in Releases |
+| FrSky **QX7 / QX7S (not the ACCESS model)** | STM32F205 | ✅ Verified — prebuilt in Releases |
 | RadioMaster **TX16S** | STM32F407 (color LCD) | ✅ Verified — prebuilt in Releases |
 | RadioMaster **Zorro** | STM32F407xE | ✅ Verified — prebuilt in Releases |
 | Other radios | — | 🔧 **build it yourself** ([`BUILD-HOWTO.md`](BUILD-HOWTO.md)) |
