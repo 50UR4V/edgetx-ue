@@ -2681,6 +2681,17 @@ extern "C" void ultraedgeCompanionTick()
     s_sfTail = (uint8_t)((s_sfTail + 1) & 7);
   }
 
+  // s42 (owner bug 2026-10-24): EdgeTX stops background music by simply not mixing it once the SF switch is off —
+  // there is no stopPlay() for the tap to forward, so the phone's looping player never stopped. Derive the edges
+  // here (main context) and send them as AUDIO_STOP_ID with the reserved background ids.
+  if (ultraedgeUxOwnerPresent()) {
+    static bool s_bgOn = false, s_bgPaused = false;
+    bool on = isFunctionActive(FUNCTION_BACKGND_MUSIC), paused = on && isFunctionActive(FUNCTION_BACKGND_MUSIC_PAUSE);
+    if (s_bgOn && !on) ultraedgeQueueAudioStop(AUDIO_STOP_ID, AUDIO_BG_STOP);
+    else if (on && paused != s_bgPaused) ultraedgeQueueAudioStop(AUDIO_STOP_ID, paused ? AUDIO_BG_PAUSE : AUDIO_BG_RESUME);
+    s_bgOn = on; s_bgPaused = paused;
+  }
+
   // P2 (docs/ARCH §4): drain unified-audio events the audio.cpp tap queued while the app owns UX.
   // Emit each as MSG_AUDIO (unbudgeted control) so call-outs stay prompt and in order. FILE carries
   // the fully-resolved path; TONE carries synth params; STOP/FLUSH mirror stopPlay/stopAll/flush.

@@ -40,7 +40,7 @@ app under **Radio Settings ▸ SD Card**.
 | iNav telemetry widget (Lua) | [iNavFlight/OpenTX-Telemetry-Widget](https://github.com/iNavFlight/OpenTX-Telemetry-Widget) | ✅ Verified |
 | ExpressLRS configuration (Lua) | [ExpressLRS Lua how-to](https://www.expresslrs.org/quick-start/transmitters/lua-howto/) | ✅ Verified |
 | Betaflight TX Lua scripts | [betaflight/betaflight-tx-lua-scripts](https://github.com/betaflight/betaflight-tx-lua-scripts) | ⚠️ Unverified |
-| Yaapu FrSky telemetry (Lua) | [yaapu/FrskyTelemetryScript](https://github.com/yaapu/FrskyTelemetryScript) | ⚠️ Unverified |
+| Yaapu FrSky telemetry (Lua) | [yaapu/FrskyTelemetryScript](https://github.com/yaapu/FrskyTelemetryScript) | Runs on the **radio**; not yet in the app (compiled `.luac` packages) |
 
 ## Prebuilt firmware (download & flash)
 The current release is **v1.1.2**. Grab the `.bin` for your radio from **[Releases](../../releases)**, then

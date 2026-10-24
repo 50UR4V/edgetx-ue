@@ -237,8 +237,13 @@ void handleUsbConnection()
     } else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
       serialStop(SP_VCP);
     }
+#if defined(USB_COMPANION)
+    // p4 = s43 (owner 2026-10-24): keep this session's USB mode until power-off, so an intermittent cable reconnects
+    // in the same mode without asking again (stock EdgeTX forgets it on every unplug).
+#else
     TRACE("reset selected USB mode");
     setSelectedUsbMode(USB_UNSELECTED_MODE);
+#endif
   }
 #endif  // defined(STM32) && !defined(SIMU)
 }
