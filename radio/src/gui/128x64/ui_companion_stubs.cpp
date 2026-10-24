@@ -20,6 +20,7 @@
 
 #include "edgetx.h"
 #include "stamp.h"        // GIT_STR — the EdgeTX base commit (s38)
+#include "hal/usb_driver.h"   // USB_UNSELECTED_MODE / USB_MAX_MODE — USB mode on the companion screen (s41)
 #include "thirdparty/ultraedge/ue_version.h"   // UE_FW_VERSION/UE_GIT/UE_BUILD_DATE, written by build-fw.sh (s28, s38)
 #include "gui/common/stdlcd/menus_common.h"
 #include "translations/tts/tts.h"
@@ -34,15 +35,26 @@ void menuCompanionOnly(event_t event)
     if (menuLevel > 0) popMenu(); else chainMenu(menuMainView);
     return;
   }
+  // s41 (owner field report 2026-10-24: locked out): the USB mode is the one radio setting the phone can't fix —
+  // if it isn't Ask or Serial the app can never connect, and this build has no Radio Setup page. So it stays
+  // editable HERE: [ENTER] cycles Ask → Joystick → Storage → Serial, saved like the stock setting (applies on the
+  // next plug-in, as in EdgeTX).
+  if (event == EVT_KEY_BREAK(KEY_ENTER)) {
+    killEvents(event);
+    g_eeGeneral.USBMode = (g_eeGeneral.USBMode >= USB_MAX_MODE) ? USB_UNSELECTED_MODE : g_eeGeneral.USBMode + 1;
+    storageDirty(EE_GENERAL);
+  }
+  static const char* const usbModeName[] = { "Ask", "Joystick", "Storage", "Serial" };
   lcdDrawText(LCD_W / 2, 0, "ULTRAEDGE", CENTERED);
   lcdInvertLine(0);
-  lcdDrawText(LCD_W / 2, 11, "Model & radio settings", CENTERED);
-  lcdDrawText(LCD_W / 2, 20, "are in the UltraEdge app.", CENTERED);
+  lcdDrawText(LCD_W / 2, 10, "Settings are in the app.", CENTERED | SMLSIZE);
+  lcdDrawText(2, 19, "USB mode:");
+  lcdDrawText(LCD_W - 2, 19, usbModeName[g_eeGeneral.USBMode & 3], RIGHT | INVERS);
   // This build has no Version page — show the same identity the Version page and the app show (s28, s38).
   lcdDrawText(LCD_W / 2, 30, "UE " UE_FW_VERSION " companion", CENTERED | SMLSIZE);
   lcdDrawText(LCD_W / 2, 37, "git " UE_GIT " " UE_BUILD_DATE, CENTERED | SMLSIZE);
   lcdDrawText(LCD_W / 2, 44, "EdgeTX " GIT_STR, CENTERED | SMLSIZE);
-  lcdDrawText(LCD_W / 2, 54, "[EXIT] back", CENTERED);
+  lcdDrawText(LCD_W / 2, 55, "[ENT] USB mode  [EXIT] back", CENTERED | SMLSIZE);
 }
 
 // Unfilled tab-table slots are null; menus_common.cpp maps any null handler to menuCompanionOnly in this build.
