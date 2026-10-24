@@ -193,13 +193,21 @@ enum BulkKind : uint8_t {
 //   AUDIO_STOP_ID   — stopPlay(id): {u8 id}         cancel queued/playing prompt(s) with this id.
 //   AUDIO_STOP_ALL  — stopAll():    {}              clear priority+normal contexts.
 //   AUDIO_FLUSH     — flush():      {}              clear the fragments FIFO + background/vario.
+//   AUDIO_STOP_ID with id AUDIO_BG_STOP / AUDIO_BG_PAUSE / AUDIO_BG_RESUME (s42): background music off / paused /
+//                   resumed — EdgeTX has no stop call for background music, so the companion tick derives these.
 enum AudioKind : uint8_t {
   AUDIO_FILE     = 1,
   AUDIO_TONE     = 2,
   AUDIO_STOP_ID  = 3,
   AUDIO_STOP_ALL = 4,
+  // s42: background music has no stop call in EdgeTX (the mixer just stops mixing when the SF turns off), so the
+  // companion tick watches FUNCTION_BACKGND_MUSIC / _PAUSE and sends AUDIO_STOP_ID with these reserved ids
+  // (above any SF prompt id). Older apps ignore them (no queued item matches).
   AUDIO_FLUSH    = 5,
 };
+static const uint8_t AUDIO_BG_STOP   = 0xFE;   // s42: background music switched off
+static const uint8_t AUDIO_BG_PAUSE  = 0xFD;   // s42: background music paused (BACKGND_MUSIC_PAUSE on)
+static const uint8_t AUDIO_BG_RESUME = 0xFC;   // s42: background music resumed
 
 // ---- Traffic classes (QoS over the single CDC pipe; see docs/08) ------------
 // Class derived from message type. Firmware scheduler services 0 > 1 > 2, with a

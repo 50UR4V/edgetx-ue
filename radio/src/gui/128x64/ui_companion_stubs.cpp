@@ -20,7 +20,8 @@
 
 #include "edgetx.h"
 #include "stamp.h"        // GIT_STR — the EdgeTX base commit (s38)
-#include "hal/usb_driver.h"   // USB_UNSELECTED_MODE / USB_MAX_MODE — USB mode on the companion screen (s41)
+#include "hal/usb_driver.h"   // USB mode on the companion screen: get/setSelectedUsbMode, usbStop (s41, s43)
+#include "serial.h"           // SP_VCP / serialStop for switching out of UltraEdge (serial) mode (s43)
 #include "thirdparty/ultraedge/ue_version.h"   // UE_FW_VERSION/UE_GIT/UE_BUILD_DATE, written by build-fw.sh (s28, s38)
 #include "gui/common/stdlcd/menus_common.h"
 #include "translations/tts/tts.h"
@@ -35,26 +36,43 @@ void menuCompanionOnly(event_t event)
     if (menuLevel > 0) popMenu(); else chainMenu(menuMainView);
     return;
   }
-  // s41 (owner field report 2026-10-24: locked out): the USB mode is the one radio setting the phone can't fix —
-  // if it isn't Ask or Serial the app can never connect, and this build has no Radio Setup page. So it stays
-  // editable HERE: [ENTER] cycles Ask → Joystick → Storage → Serial, saved like the stock setting (applies on the
-  // next plug-in, as in EdgeTX).
+  // s41/s43 (owner 2026-10-24): USB mode is the one radio setting the phone can't fix (if it isn't UltraEdge the app
+  // can't connect), and this build has no Radio Setup page. Flying days must not ask on every connect, and a simulator
+  // session must still be easy:
+  //   [ENTER]       switch the USB mode NOW (UltraEdge app → Simulator/joystick → SD card), until power-off;
+  //   [ENTER long]  make the current mode the saved default.
+  // "Ask" as the saved default means UltraEdge in companion builds (main.cpp, s43), so a fresh radio just works.
+  static const char* const usbName[] = { "UltraEdge", "Simulator", "SD card", "UltraEdge" };   // by usbMode
+  int now = getSelectedUsbMode();
+  if (now == USB_UNSELECTED_MODE) now = (g_eeGeneral.USBMode == USB_UNSELECTED_MODE) ? USB_SERIAL_MODE : g_eeGeneral.USBMode;
   if (event == EVT_KEY_BREAK(KEY_ENTER)) {
     killEvents(event);
-    g_eeGeneral.USBMode = (g_eeGeneral.USBMode >= USB_MAX_MODE) ? USB_UNSELECTED_MODE : g_eeGeneral.USBMode + 1;
+    int next = (now == USB_SERIAL_MODE) ? USB_JOYSTICK_MODE : (now == USB_JOYSTICK_MODE) ? USB_MASS_STORAGE_MODE : USB_SERIAL_MODE;
+    if (usbStarted()) {                 // restart USB in the new mode right away (handleUsbConnection starts it)
+      if (getSelectedUsbMode() == USB_SERIAL_MODE) serialStop(SP_VCP);
+      usbStop();
+    }
+    setSelectedUsbMode(next);
+    now = next;
+  }
+  else if (event == EVT_KEY_LONG(KEY_ENTER)) {
+    killEvents(event);
+    g_eeGeneral.USBMode = (now == USB_SERIAL_MODE) ? USB_UNSELECTED_MODE : now;   // UltraEdge saved as "Ask" = default
     storageDirty(EE_GENERAL);
   }
-  static const char* const usbModeName[] = { "Ask", "Joystick", "Storage", "Serial" };
+  int saved = (g_eeGeneral.USBMode == USB_UNSELECTED_MODE) ? USB_SERIAL_MODE : g_eeGeneral.USBMode;
   lcdDrawText(LCD_W / 2, 0, "ULTRAEDGE", CENTERED);
   lcdInvertLine(0);
-  lcdDrawText(LCD_W / 2, 10, "Settings are in the app.", CENTERED | SMLSIZE);
-  lcdDrawText(2, 19, "USB mode:");
-  lcdDrawText(LCD_W - 2, 19, usbModeName[g_eeGeneral.USBMode & 3], RIGHT | INVERS);
+  lcdDrawText(LCD_W / 2, 9, "Settings are in the app.", CENTERED | SMLSIZE);
+  lcdDrawText(2, 17, "USB now:");
+  lcdDrawText(LCD_W - 2, 17, usbName[now & 3], RIGHT | INVERS);
+  lcdDrawText(2, 25, "Default:", SMLSIZE);
+  lcdDrawText(LCD_W - 2, 25, usbName[saved & 3], RIGHT | SMLSIZE);
   // This build has no Version page — show the same identity the Version page and the app show (s28, s38).
-  lcdDrawText(LCD_W / 2, 30, "UE " UE_FW_VERSION " companion", CENTERED | SMLSIZE);
-  lcdDrawText(LCD_W / 2, 37, "git " UE_GIT " " UE_BUILD_DATE, CENTERED | SMLSIZE);
-  lcdDrawText(LCD_W / 2, 44, "EdgeTX " GIT_STR, CENTERED | SMLSIZE);
-  lcdDrawText(LCD_W / 2, 55, "[ENT] USB mode  [EXIT] back", CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 33, "UE " UE_FW_VERSION " companion", CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 40, "git " UE_GIT " " UE_BUILD_DATE, CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 47, "EdgeTX " GIT_STR, CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 56, "ENT switch  long:save  EXIT", CENTERED | SMLSIZE);
 }
 
 // Unfilled tab-table slots are null; menus_common.cpp maps any null handler to menuCompanionOnly in this build.

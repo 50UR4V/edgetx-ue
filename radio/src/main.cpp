@@ -187,7 +187,13 @@ void handleUsbConnection()
   if (!_usbDisabled && !usbStarted() && usbPlugged()) {
     if (getSelectedUsbMode() == USB_UNSELECTED_MODE) {
       if (g_eeGeneral.USBMode == USB_UNSELECTED_MODE) {
+#if defined(UI_COMPANION) && defined(USB_SERIAL)
+        // s43 (owner 2026-10-24): a companion build's UI IS the app, so "Ask" means UltraEdge — no prompt on every
+        // connect. Joystick / SD card are one ENTER away on the UltraEdge screen (menuCompanionOnly).
+        setSelectedUsbMode(USB_SERIAL_MODE);
+#else
         openUsbMenu();
+#endif
       } else {
         setSelectedUsbMode(g_eeGeneral.USBMode);
       }
@@ -237,8 +243,13 @@ void handleUsbConnection()
     } else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
       serialStop(SP_VCP);
     }
+#if defined(USB_COMPANION)
+    // s43 (owner 2026-10-24): keep this session's USB mode until power-off, so an intermittent cable reconnects in
+    // the same mode without asking again (stock EdgeTX forgets it on every unplug).
+#else
     TRACE("reset selected USB mode");
     setSelectedUsbMode(USB_UNSELECTED_MODE);
+#endif
   }
 #endif  // defined(STM32) && !defined(SIMU)
 }

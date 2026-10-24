@@ -4,7 +4,7 @@
 it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
 that it works on the real radio.
 
-Firmware **1.1.20 (beta)** · EdgeTX base `90bbce17` · pair it with the UltraEdge app **1.4.0 beta**.
+Firmware **1.1.22 (beta)** · EdgeTX base `90bbce17` · pair it with the UltraEdge app **1.4.3 beta**.
 
 ## Status key
 
@@ -102,7 +102,7 @@ Companion build the radio's own menus are gone; to get them back, flash stock Ed
 
 1. **Flash** the file for your radio from the firmware release (EdgeTX Buddy, or the bootloader). Flashing guide:
    `EDGETX-FORK-FLASHING.md`.
-2. **Version page:** the radio shows `ultraedge-<your radio>` and `UE 1.1.20`. On a Companion build, open any menu:
+2. **Version page:** the radio shows `ultraedge-<your radio>` and `UE 1.1.22`. On a Companion build, open any menu:
    the "settings are in the UltraEdge app" screen shows the same version, git and date.
 3. **Connect the app:** plug the phone in by USB and open UltraEdge. It connects and shows live channels.
 4. **Edit and save a model:** change something small (a mix weight or a model name), save, and check it on the
