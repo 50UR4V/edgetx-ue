@@ -1,66 +1,44 @@
 # Flashing UltraEdge firmware — v1.1.2.3
 
-These `.bin` files are **EdgeTX firmware with the UltraEdge companion overlay** built in. Flash the file
-that matches your radio, then pair it with the **UltraEdge** Android app over USB.
+These `.bin` files are EdgeTX firmware with the UltraEdge companion overlay built in. Flash the file for your radio,
+then connect the **UltraEdge** Android app over USB.
 
-> **What's new in v1.1.2.3:** background music started by a Special Function now stops and pauses with its switch on
-> the phone too, and the USB mode you pick is kept until you power the radio off, so a loose cable reconnects in the
-> same mode without asking again. Everything else is identical to v1.1.2.1, including the Version page
-> (`FW: ultraedge-<radio>`, `VERS: UE 1.1.2.3`, `GIT#`, `DATE`). The `.txt` next to each `.bin` lists exactly what that
-> radio will show.
->
-> **Verified radios (v1.1.2 feature set):** RadioMaster **Pocket**, RadioMaster **Zorro**, FrSky **QX7 / QX7S (not the ACCESS model)** and
-> RadioMaster **TX16S** (colour LCD), all checked on real hardware. Other radios are **build-it-yourself**; see
-> `BUILD-HOWTO.md`. More prebuilt targets are added as each is verified on hardware.
+**New in v1.1.2.3:** background music started by a Special Function stops and pauses with its switch on the phone too.
+The USB mode you pick is kept until you power the radio off, so a loose cable reconnects without asking again.
 
-| File | Radio | MCU | Notes |
+| File | Radio | MCU | Status |
 |---|---|---|---|
-| `edgetx-ue-radiomaster-pocket-v1.1.2.3.bin` | RadioMaster Pocket | STM32F407 (512 KB) | Internal CROSSFIRE; external DIY-multi left out to fit flash. |
-| `edgetx-ue-frsky-qx7-v1.1.2.3.bin` | FrSky QX7 / QX7S (not ACCESS) | STM32F205 | |
-| `edgetx-ue-radiomaster-tx16s-v1.1.2.3.bin` | RadioMaster TX16S | STM32F407 (2 MB, color LCD) | Color-LCD target. Known: telemetry refresh slower than mono. |
-| `edgetx-ue-radiomaster-zorro-v1.1.2.3.bin` | RadioMaster Zorro | STM32F407xE (512 KB) | ✅ Verified. |
+| `edgetx-ue-radiomaster-pocket-v1.1.2.3.bin` | RadioMaster Pocket | STM32F407 | ✅ Verified. Internal CRSF; external DIY-multi left out to fit flash. |
+| `edgetx-ue-radiomaster-zorro-v1.1.2.3.bin` | RadioMaster Zorro | STM32F407 | ✅ Verified |
+| `edgetx-ue-frsky-qx7-v1.1.2.3.bin` | FrSky QX7 / QX7S (**not** the QX7 ACCESS) | STM32F205 | ✅ Verified |
+| `edgetx-ue-radiomaster-tx16s-v1.1.2.3.bin` | RadioMaster TX16S / TX16S MKII | STM32F429 | ✅ Verified. Telemetry screens refresh slower than on mono radios. |
 
-Firmware ↔ app compatibility: **UE Protocol v4**. Use UltraEdge app **1.3.2 or newer** (Google Play).
-Verify your download against `SHA256SUMS.txt`:
+All four are full builds: the radio keeps every EdgeTX menu. Use UltraEdge app **1.3.2 or newer** (Google Play); both
+speak UE Protocol v4. Other radios: the beta 1.1.22 pre-release has builds for 56 radios.
 
-```bash
-shasum -a 256 -c SHA256SUMS.txt
-```
+Check the download: `shasum -a 256 -c SHA256SUMS.txt`. Back up your SD card and current firmware before flashing.
 
 ## Flash it (any one method)
+**A. EdgeTX Buddy** (browser, no install): open <https://buddy.edgetx.org> in Chrome or Edge, choose
+*Flash local firmware* and pick the `.bin`. Put the radio in **DFU mode** the way EdgeTX describes for your radio (on
+most RadioMaster radios: switched off, then plugged in with a USB data cable) and follow Buddy's prompts.
 
-**Safety first:** back up your current firmware and your SD card before flashing. Flashing replaces the
-firmware only; your models/settings on the SD card are untouched, but a backup is cheap insurance.
+**B. The radio's bootloader** (no computer): copy the `.bin` to `/FIRMWARE` on the SD card. Hold both horizontal trims
+toward the centre while switching the radio on to start the EdgeTX bootloader, choose *Write Firmware* and pick the file.
 
-### A. EdgeTX Buddy (easiest — browser, no install)
-1. Go to <https://buddy.edgetx.org> in Chrome/Edge.
-2. Choose **"Flash local firmware"** and select the `.bin` for your radio.
-3. Put the radio in **DFU/bootloader mode** (power on while holding both horizontal trims inward), plug
-   in USB, and follow Buddy's prompts.
-
-### B. Radio's built-in SD flasher (no computer)
-1. Copy the `.bin` into the **`/FIRMWARE`** folder on the radio's SD card.
-2. On the radio: long-press **MENU → SD-CARD → FIRMWARE →** your `.bin` **→ Flash firmware**.
-
-### C. Desktop (STM32CubeProgrammer / dfu-util)
-1. Radio into DFU mode (both horizontal trims inward while powering on), plug USB.
-2. Flash the `.bin` at address `0x08000000` with your usual STM32 DFU tool.
+**C. STM32 DFU tools** (STM32CubeProgrammer, dfu-util): radio in DFU mode, flash the `.bin` at `0x08000000`.
 
 ## After flashing
-0. Check the radio's **Version** page (SYS ▸ Version): it should match the `.txt` for your radio (`ultraedge-…`,
-   `UE 1.1.2.3`, GIT#, DATE). Include those lines in any bug report.
-1. The radio reboots into EdgeTX as normal — it flies exactly as stock EdgeTX. The UltraEdge overlay is
-   **dormant until a phone is connected**; unplug the phone and nothing about how the radio flies changes.
-2. Install the **UltraEdge** app (Google Play), plug the phone into the radio's USB port, allow the USB
-   permission prompt, and the app connects.
+1. Open **SYS ▸ Version**. It should match the `.txt` for your radio (`ultraedge-…`, `UE 1.1.2.3`, GIT#, DATE).
+   Include these lines in any bug report.
+2. The radio flies exactly as EdgeTX. Install **UltraEdge** from Google Play, plug the phone into the radio's USB port
+   and allow the USB permission prompt.
 
 ## Trouble
-- **Radio not detected in DFU:** try a different USB cable (must be data, not charge-only); some radios
-  need the trims-inward power-on timing to be exact.
-- **App won't connect:** unplug/replug once; grant the Android USB permission when prompted. See the
-  UltraEdge User Manual (<https://github.com/50UR4V/UltraEdge-app>).
+- **No DFU device:** use a data cable, not a charge-only one, and check EdgeTX's DFU steps for your radio.
+- **App won't connect:** unplug and replug once, and allow the Android USB permission. See the
+  [User Manual](https://github.com/50UR4V/UltraEdge-app).
 
 ---
-UltraEdge is a community project, not affiliated with or endorsed by EdgeTX or FrSky. EdgeTX is licensed
-GPL-2.0-only; this firmware is a derivative and is offered under the same terms. The full source is in this
-repo. [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
+UltraEdge is a community project, not affiliated with or endorsed by EdgeTX, FrSky or RadioMaster. This firmware is a
+derivative of EdgeTX under GPL-2.0-only; the exact source is tag `v1.1.2.3` on branch `ultraedge`.
