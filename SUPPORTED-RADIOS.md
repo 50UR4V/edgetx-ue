@@ -42,7 +42,7 @@ Firmware **1.1.22 (beta)** · EdgeTX base `90bbce17` · pair it with the UltraEd
 | FrSky Horus X10 / X10S | STM32 F429xI · 2 MB | Colour | Full (.bin) | 🔨 Built, not yet verified |
 | FrSky Horus X10 / X10S Express | STM32 F429xI · 2 MB | Colour | Full (.bin) | 🔨 Built, not yet verified |
 | FrSky Horus X12S | STM32 F429xI · 2 MB | Colour | Full (.bin) | 🔨 Built, not yet verified |
-| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) |
+| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner); 1.1.22 smoke-tested |
 | FrSky Taranis Q X7 ACCESS | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | FrSky Taranis X-Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | FrSky Taranis X-Lite S / Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
@@ -77,14 +77,14 @@ Firmware **1.1.22 (beta)** · EdgeTX base `90bbce17` · pair it with the UltraEd
 | RadioMaster GX12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster GX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | 🔨 Built, not yet verified |
 | RadioMaster MT12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
-| RadioMaster Pocket | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) |
+| RadioMaster Pocket | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.1.2 full build |
 | RadioMaster T8 Pro / T8 Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster TX12 | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster TX12 MKII | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster TX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | 🔨 Built, not yet verified |
-| RadioMaster TX16S / TX16S MKII | STM32 F429xI · 2 MB | Colour | Full (.bin) | ✅ Verified (owner) |
+| RadioMaster TX16S / TX16S MKII | STM32 F429xI · 2 MB | Colour | Full (.bin) | ✅ Verified (owner); 1.1.22 smoke-tested |
 | RadioMaster TX16S MK3 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | 🔨 Built, not yet verified |
-| RadioMaster Zorro | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) |
+| RadioMaster Zorro | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.1.2 full build |
 
 Notes:
 - **FrSky Q X7 vs Q X7 ACCESS are different radios** (STM32F205 vs STM32F407). Flash the file for your model. Only the
@@ -101,7 +101,7 @@ If your radio says **🔨 Built, not yet verified**, you can move it to ✅ in a
 Companion build the radio's own menus are gone; to get them back, flash stock EdgeTX again.
 
 1. **Flash** the file for your radio from the firmware release (EdgeTX Buddy, or the bootloader). Flashing guide:
-   `EDGETX-FORK-FLASHING.md`.
+   `FLASHING.md` on the release.
 2. **Version page:** the radio shows `ultraedge-<your radio>` and `UE 1.1.22`. On a Companion build, open any menu:
    the "settings are in the UltraEdge app" screen shows the same version, git and date.
 3. **Connect the app:** plug the phone in by USB and open UltraEdge. It connects and shows live channels.

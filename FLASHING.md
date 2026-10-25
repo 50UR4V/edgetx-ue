@@ -1,7 +1,7 @@
 # Flashing UltraEdge firmware 1.1.22 (beta)
 
 **Beta.** UltraEdge is made for any EdgeTX radio, and 1.1.22 is built for all 56 radios EdgeTX supports. Only
-RadioMaster Pocket, Zorro, TX16S and FrSky Q X7 / Q X7S have been checked on real hardware (on earlier builds); every
+RadioMaster Pocket, Zorro, TX16S and FrSky Q X7 / Q X7S have been checked on real hardware (TX16S and Q X7 also on 1.1.22); every
 other radio is **built, not yet verified**. Back up your SD card and your current firmware first, and bench-test with
 the propeller off. Pair it with the UltraEdge app **1.4.3 beta** (Google Play open testing).
 
@@ -28,7 +28,7 @@ show. Verify downloads with `shasum -a 256 -c SHA256SUMS.txt`.
 | FrSky Horus X10 / X10S | `edgetx-ue-frsky-x10-v1.1.22.bin` | Full | 🔨 built, not yet verified |
 | FrSky Horus X10 / X10S Express | `edgetx-ue-frsky-x10express-v1.1.22.bin` | Full | 🔨 built, not yet verified |
 | FrSky Horus X12S | `edgetx-ue-frsky-x12s-v1.1.22.bin` | Full | 🔨 built, not yet verified |
-| FrSky Taranis Q X7 / Q X7S | `edgetx-ue-frsky-qx7-v1.1.22-companion.bin` | Companion | ✅ verified (owner) on earlier builds |
+| FrSky Taranis Q X7 / Q X7S | `edgetx-ue-frsky-qx7-v1.1.22-companion.bin` | Companion | ✅ verified (owner); 1.1.22 smoke-tested |
 | FrSky Taranis Q X7 ACCESS | `edgetx-ue-frsky-qx7-access-v1.1.22-companion.bin` | Companion | 🔨 built, not yet verified |
 | FrSky Taranis X-Lite | `edgetx-ue-frsky-xlite-v1.1.22-companion.bin` | Companion | 🔨 built, not yet verified |
 | FrSky Taranis X-Lite S / Pro | `edgetx-ue-frsky-xlites-v1.1.22-companion.bin` | Companion | 🔨 built, not yet verified |
@@ -68,14 +68,14 @@ show. Verify downloads with `shasum -a 256 -c SHA256SUMS.txt`.
 | RadioMaster TX12 | `edgetx-ue-radiomaster-tx12-v1.1.22-companion.bin` | Companion | 🔨 built, not yet verified |
 | RadioMaster TX12 MKII | `edgetx-ue-radiomaster-tx12mk2-v1.1.22-companion.bin` | Companion | 🔨 built, not yet verified |
 | RadioMaster TX15 | `edgetx-ue-radiomaster-tx15-v1.1.22.uf2` | Full | 🔨 built, not yet verified |
-| RadioMaster TX16S / TX16S MKII | `edgetx-ue-radiomaster-tx16s-v1.1.22.bin` | Full | ✅ verified (owner) on earlier builds |
+| RadioMaster TX16S / TX16S MKII | `edgetx-ue-radiomaster-tx16s-v1.1.22.bin` | Full | ✅ verified (owner); 1.1.22 smoke-tested |
 | RadioMaster TX16S MK3 | `edgetx-ue-radiomaster-tx16smk3-v1.1.22.uf2` | Full | 🔨 built, not yet verified |
 | RadioMaster Zorro | `edgetx-ue-radiomaster-zorro-v1.1.22-companion.bin` | Companion | ✅ verified (owner) on earlier builds |
 
 ## Flash it
-- **`.bin` files:** flash them the way you'd flash official EdgeTX. Easiest is EdgeTX Buddy (<https://buddy.edgetx.org>,
-  *Flash local firmware*, radio in DFU/bootloader mode), or copy the file to `/FIRMWARE` on the SD card and use the
-  radio's bootloader. Using STM32 DFU tools? Flash at `0x08000000`.
+- **`.bin` files:** flash them the way you'd flash official EdgeTX: EdgeTX Buddy (<https://buddy.edgetx.org>,
+  *Flash local firmware*, radio in DFU mode as EdgeTX describes for your radio), or copy the file to `/FIRMWARE` on the
+  SD card and use *Write Firmware* in the radio's EdgeTX bootloader. STM32 DFU tools: flash at `0x08000000`.
 - **`.uf2` files** (STM32H750 radios: TX15, TX16S MK3, GX15, T15 Pro, T22, V12, ST16, PA01, Commando 14): use the
   radio's EdgeTX bootloader exactly as for an official EdgeTX `.uf2` (see the EdgeTX flashing guide for your radio).
 
@@ -94,7 +94,7 @@ key). In 1.1.22 a companion radio connects to the app **without asking**, and a 
   → SD card straight away. It lasts until you switch the radio off.
 - **Make it permanent:** hold **ENTER** to save the current mode as the default.
 
-Problems? Go back to your previous firmware (stock EdgeTX or UltraEdge v1.1.2.1) the same way.
+Problems? Go back to your previous firmware (stock EdgeTX or UltraEdge v1.1.2.3) the same way.
 
 ---
 UltraEdge is a community project, not affiliated with or endorsed by EdgeTX or any radio maker. GPL-2.0-only; the
