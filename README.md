@@ -17,12 +17,12 @@ EdgeTX does. With the overlay compiled out, the build is byte-for-byte identical
 </table>
 
 ## Download
-Get the `.bin` for your radio from **[Releases](../../releases)** and follow `FLASHING.md` in that release.
+Get the `.bin` (or `.uf2` for H750 radios) for your radio from **[Releases](../../releases)** and follow `FLASHING.md` in that release.
 
-| Release | Radios | Build | For |
-|---|---|---|---|
-| **v1.1.2.3** (Latest, production) | RadioMaster Pocket, Zorro, TX16S; FrSky QX7 / QX7S (**not** the QX7 ACCESS) | Full build (all EdgeTX menus plus UltraEdge) | App 1.3.2 or newer (Google Play) |
-| **1.1.22** (pre-release, beta) | 56 EdgeTX radios, listed with their status in `SUPPORTED-RADIOS.md` on the release | Companion build on black-and-white radios, full build on colour radios | App 1.4.3 or newer (Play open testing) |
+**v1.1.2.3** (Latest, production): full builds for RadioMaster Pocket, Zorro, TX16S and FrSky QX7 / QX7S (**not** the
+QX7 ACCESS), for app 1.3.2 on Google Play. **1.1.22** (pre-release, beta): 56 EdgeTX radios (companion build on
+black-and-white radios, full build on colour radios), for app 1.4.3 on Play open testing. Which to pick:
+[User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
 
 A radio is marked **Verified** only after the checklist in `SUPPORTED-RADIOS.md` has passed on real hardware. Every
 other build is compiled and identity-checked, but not yet flown. If you fly one, please report how it went.

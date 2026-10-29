@@ -8,7 +8,7 @@ The USB mode you pick is kept until you power the radio off, so a loose cable re
 
 | File | Radio | MCU | Status |
 |---|---|---|---|
-| `edgetx-ue-radiomaster-pocket-v1.1.2.3.bin` | RadioMaster Pocket | STM32F407 | ✅ Verified. Internal CRSF; external DIY-multi left out to fit flash. |
+| `edgetx-ue-radiomaster-pocket-v1.1.2.3.bin` | RadioMaster Pocket | STM32F407 | ✅ Verified. Internal CRSF; external DIY-multi and external PXX1 left out to fit flash. |
 | `edgetx-ue-radiomaster-zorro-v1.1.2.3.bin` | RadioMaster Zorro | STM32F407 | ✅ Verified |
 | `edgetx-ue-frsky-qx7-v1.1.2.3.bin` | FrSky QX7 / QX7S (**not** the QX7 ACCESS) | STM32F205 | ✅ Verified |
 | `edgetx-ue-radiomaster-tx16s-v1.1.2.3.bin` | RadioMaster TX16S / TX16S MKII | STM32F429 | ✅ Verified. Telemetry screens refresh slower than on mono radios. |
@@ -29,7 +29,7 @@ toward the centre while switching the radio on to start the EdgeTX bootloader, c
 **C. STM32 DFU tools** (STM32CubeProgrammer, dfu-util): radio in DFU mode, flash the `.bin` at `0x08000000`.
 
 ## After flashing
-1. Open **SYS ▸ Version**. It should match the `.txt` for your radio (`ultraedge-…`, `UE 1.1.2.3`, GIT#, DATE).
+1. Open **SYS › Version**. It should match the `.txt` for your radio (`ultraedge-…`, `UE 1.1.2.3`, GIT#, DATE).
    Include these lines in any bug report.
 2. The radio flies exactly as EdgeTX. Install **UltraEdge** from Google Play, plug the phone into the radio's USB port
    and allow the USB permission prompt.
