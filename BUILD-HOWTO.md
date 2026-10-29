@@ -2,7 +2,7 @@
 
 This fork is **EdgeTX + one self-contained overlay** (`radio/src/thirdparty/ultraedge/` plus a few
 `#if defined(USB_COMPANION)`-guarded hooks). Building it is the normal EdgeTX build with **one extra
-flag: `-DUSB_COMPANION=ON`**. If you can build EdgeTX, you can build this.
+flag: `-DUSB_COMPANION=ON`**.
 
 **Codespaces** needs nothing installed. **Local** is faster if you already build EdgeTX.
 
@@ -18,7 +18,7 @@ guide for background: <https://edgetx.org/edgetx/latest/building/codespaces/>.
 
 1. **Fork isn't required** — on this repo, click **`< > Code` ▸ Codespaces ▸ Create codespace** on branch `ultraedge`
    (production) or `ultraedge-beta` (beta).
-   Wait for the container to finish building (first time ~a few minutes).
+   Wait for the container to finish building (first run takes a few minutes).
 2. In the Codespace terminal, configure + build for your radio (example: **RadioMaster Pocket**):
    ```bash
    cmake -S . -B build -G Ninja \
@@ -76,17 +76,18 @@ raw-telemetry passthrough uses EdgeTX's LUA-gated TelemetryQueue and won't compi
 
 | Radio | Key flags | Notes |
 |---|---|---|
-| RadioMaster **Pocket** | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified. Internal CROSSFIRE, so external PXX1 is dropped for space. ~10 KB flash headroom. |
-| FrSky **QX7 / QX7S (not the ACCESS model)** | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES` | ✅ Verified. Internal module **is** XJT/PXX1 — keep `PXX1=YES`. |
-| RadioMaster **TX16S** | `-DPCB=X10 -DPCBREV=TX16S` | ✅ Verified (v1.1.2). First color-LCD target; 2 MB flash so no trims needed. Prebuilt in Releases. |
-| RadioMaster **Zorro** | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified (v1.1.2). Mono, Pocket-twin; tight flash fit. |
+| RadioMaster **Pocket** | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified (v1.1.2 full build). Internal CROSSFIRE; external DIY-multi and external PXX1 are left out to fit flash. ~10 KB flash headroom. |
+| FrSky **QX7 / QX7S (not the ACCESS model)** | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES` | ✅ Verified (v1.1.2.3). Internal module **is** XJT/PXX1 — keep `PXX1=YES`. |
+| RadioMaster **TX16S** | `-DPCB=X10 -DPCBREV=TX16S` | ✅ Verified (v1.1.2.3). 2 MB flash, so no trims needed. Prebuilt in Releases. |
+| RadioMaster **Zorro** | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified (v1.1.2 full build). Mono, Pocket-twin; tight flash fit. |
 
 Always append **`-DUSB_COMPANION=ON`**. Without it you get stock EdgeTX, byte-for-byte identical to upstream, which is
 a good way to check your toolchain first.
 
 **Companion build** (branch `ultraedge-beta` only): add **`-DUI_COMPANION=YES`** to remove the radio's own model and
 radio-settings menus. The beta uses it for black-and-white radios to free flash; those settings are then made in the
-app. The flags used for each of the 56 beta radios are in `SUPPORTED-RADIOS.md` on the 1.1.22 release.
+app. The per-radio build flags for the 56 beta radios are the TARGETS table in `firmware/v4/build-fw.sh` in the
+UltraEdge monorepo (not yet public); they will be published with the next beta.
 
 Full EdgeTX board/flag reference: <https://github.com/EdgeTX/edgetx/blob/main/docs/building/compilation-options.md>.
 
@@ -94,12 +95,8 @@ Full EdgeTX board/flag reference: <https://github.com/EdgeTX/edgetx/blob/main/do
 
 ## Adding a radio to the verified list
 
-A radio is marked verified only after the checklist in `SUPPORTED-RADIOS.md` passes on real hardware. If you build for
-a radio that isn't verified yet:
-1. Build with `-DUSB_COMPANION=ON` for your board and flash it.
-2. Confirm the radio **boots and flies normally** (companion dormant, no phone), then plug in the
-   UltraEdge app and confirm it connects and telemetry/model editing work.
-3. Report the result (radio, build flags, what worked and what didn't) in
-   [UltraEdge-app issues](https://github.com/50UR4V/UltraEdge-app/issues).
+A radio is marked verified only after the checklist in `SUPPORTED-RADIOS.md` (section *Help verify your radio*) passes
+on real hardware. Run that checklist on your build and report the result, with your build flags, in
+[UltraEdge-app issues](https://github.com/50UR4V/UltraEdge-app/issues).
 
 Nothing is marked verified without a hardware check. Flying a build you made yourself is your call.
