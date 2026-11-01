@@ -129,6 +129,18 @@ add_definitions(
   -DCPU_TYPE=${CPU_TYPE} -DCPU_TYPE_FULL=${CPU_TYPE_FULL}
 )
 
+# UltraEdge s49 (owner 2026-10-31): a firmware image must not depend on the folder it was built in. GCC embeds the
+# absolute source path wherever __FILE__ is used (the colour builds carry two: an assert in storage/rlc.cpp and one in
+# thirdparty/stb/stb_image.h), so the same source built in two checkouts differed by the path length. Map the source and
+# build directories to fixed names in those strings; the released bins then rebuild byte-identically (but for the build
+# stamp) from any folder — what the public edgetx-ue tag promises. Debug info is unaffected (not in the .bin).
+if(NOT NATIVE_BUILD)
+  add_compile_options(
+    "-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=."
+    "-fmacro-prefix-map=${CMAKE_BINARY_DIR}=build"
+  )
+endif()
+
 # UltraEdge: define USB_COMPANION here — BEFORE add_executable(firmware) — so the
 # flag reaches EVERY firmware source. Defining it after the target was the HW-2 bug.
 # The companion module now lives entirely under thirdparty/ultraedge/ (docs/30 refactor):

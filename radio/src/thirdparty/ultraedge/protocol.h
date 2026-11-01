@@ -128,6 +128,8 @@ enum MsgType : uint8_t {
   MSG_SD_LIST_NEWEST_RESP = 0x49, // radio->phone: {u8 count, u8 flags(b0=more), [u32 size, u32 ts, u8 nl, name]}
   MSG_GET_RADIO_INFO      = 0x4A, // phone->radio: {} request this radio's identity + SF catalog (ADR-0033, s30)
   MSG_GF_SET              = 0x4C, // phone->radio: {u8 index, yaml "customFn:\n  <index>:\n    ..."} one global function (ADR-0038, s36)
+  MSG_MOD_STATE   = 0x4D, // s45 (ADR-0048) radio->phone: NUM_MODULES x {u8 mode 0 normal/1 bind/2 range, u8 flags b0 telemetry streaming b1 MULTI bind finished b2 beeping, u8 caps b0 bind b1 range}
+  MSG_MODEL_CHANGED = 0x55, // s50 (ADR-0053) radio->phone: {u8 nameLen, filename} the active model changed (radio menu, Lua, app select/new)
   MSG_RADIO_INFO          = 0x4B, // radio->phone: {u8 ver=2, u8 uidLen, uid[], u8 n, [u8 func, u8 nl, yamlName], v2: u8 nf, [u8 len, str] (fw, ueVer, ueGit, ueDate, edgetxVer, edgetxGit; s38)}
   MSG_TELECAT     = 0x3D, // radio->phone. V2: {u8 count, [u16 id, u8 value_kind, u8 unit, u8 prec,
                           //   u8 nameLen, name]} — value_kind (ValueKind) added so the app knows each
@@ -235,6 +237,7 @@ enum StreamId : uint8_t {
   STREAM_LUA       = 3, // (later) LUA script data
   STREAM_HOME      = 4, // main-view telemetry (trims/sticks/timers) for the Home screen
   STREAM_TELEM_RAW = 5, // raw SPort/CRSF passthrough bytes for ecosystem Lua (docs/32)
+  STREAM_MODSTATE  = 7, // s45 (ADR-0048): MSG_MOD_STATE while an RF page is open
   STREAM_SOURCES   = 6, // live input sources: sticks/pots/switches (docs/37) — for getValue('thr'…) + auto-select
 };
 
@@ -539,6 +542,7 @@ enum NackReason : uint8_t {
   NACK_UNSAFE     = 10,   // model SELECT refused — throttle not idle / switch warnings (flight-safety gate)
   NACK_NOT_FOUND  = 11,   // named model file not found on the radio
   NACK_ACTIVE     = 12,   // refused: that's the active model (can't delete the one in use)
+  NACK_UNSUPPORTED = 13,  // s45 (ADR-0048): this module type can't do that (e.g. range check on CRSF)
 };
 
 // ---- Roles & capability bits ------------------------------------------------
@@ -559,6 +563,7 @@ enum Caps : uint32_t {
   CAP_PASSTHRU_CRSF= 1u << 8, // V2: first-class CRSF/MAVLink passthrough for GCS  [later phase]
   CAP_CALIB        = 1u << 10, // Set 4: MSG_CAL drives EdgeTX's stick/pot calibration from the phone
   CAP_PUSH_ACK     = 1u << 11, // ADR-0032 (s29): model-push DATA chunks are ACKed one by one (stop-and-wait)
+  CAP_MODEL_EVENTS = 1u << 12, // s50 (ADR-0053): MSG_MODEL_CHANGED announces every change of the active model
 };
 
 // ---- Link state machine -----------------------------------------------------

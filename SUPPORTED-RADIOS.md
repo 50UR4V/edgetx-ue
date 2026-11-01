@@ -4,9 +4,10 @@
 it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
 that it works on the real radio.
 
-Firmware **1.1.22 (beta)** · EdgeTX base `90bbce17` · pair it with the UltraEdge app **1.4.3 beta**.
+Firmware **v1.2.0** for Pocket, Zorro, TX16S and QX7 (app **1.6.0**, or **1.6.1 beta**); every other radio: **1.1.22
+(beta)**, app 1.4.3 or newer. EdgeTX base `90bbce17`.
 
-Hardware-verified: Pocket, Zorro, TX16S and QX7 on the v1.1.2 full build; 1.1.22 beta (TX16S full, QX7 companion) smoke-tested by the owner on 2026-10-25.
+Hardware-verified on v1.2.0 by the owner on 2026-11-01: Pocket, Zorro and QX7 (companion) and TX16S (full).
 
 ## Status key
 
@@ -16,7 +17,6 @@ Hardware-verified: Pocket, Zorro, TX16S and QX7 on the v1.1.2 full build; 1.1.22
 | ✅ Verified (tester: name) | A beta tester ran the checklist and reported it. |
 | ✅ Verified (community: link) | Someone reported a passing checklist in a public GitHub issue. |
 | 🔨 Built, not yet verified | Firmware builds and passes our build checks, but nobody has run it on this radio yet. **Help us verify it.** |
-| 🔨 Companion build not yet verified (full build verified on v1.1.2) | The full build passed the checklist on this radio on v1.1.2, but nobody has run the checklist on its companion build yet. |
 | ❌ Not supported yet (reason) | No working build yet, and why. |
 
 *Smoke-tested* means the owner flashed that build and used it, without running the full checklist.
@@ -30,8 +30,7 @@ Hardware-verified: Pocket, Zorro, TX16S and QX7 on the v1.1.2 full build; 1.1.22
 
 ## Radios
 
-**Today: 2 verified · 54 built, not yet verified (Pocket and Zorro: full build verified on v1.1.2, companion build not
-yet) · 4 not supported.**
+**Today: 4 verified · 52 built, not yet verified · 4 not supported.**
 
 | Radio | MCU · flash | Screen | Build | Status |
 |---|---|---|---|---|
@@ -52,7 +51,7 @@ yet) · 4 not supported.**
 | FrSky Tandem X20 / X20S / X20 HD (Horus X20 family) | — | Colour | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
 | FrSky Twin X14 / X14S / X14RS | — | Colour | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
 | FrSky Twin X-Lite / X-Lite S / X-Lite RII | — | Colour | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
-| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.1.2 full build; 1.1.22 beta smoke-tested by the owner 2026-10-25 |
+| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.2.0 companion build, 2026-11-01 |
 | FrSky Taranis Q X7 ACCESS | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | FrSky Taranis X-Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | FrSky Taranis X-Lite S / Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
@@ -87,14 +86,14 @@ yet) · 4 not supported.**
 | RadioMaster GX12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster GX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | 🔨 Built, not yet verified |
 | RadioMaster MT12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
-| RadioMaster Pocket | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Companion build not yet verified (full build verified on v1.1.2) |
+| RadioMaster Pocket | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.2.0 companion build, 2026-11-01 |
 | RadioMaster T8 Pro / T8 Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster TX12 | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster TX12 MKII | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | RadioMaster TX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | 🔨 Built, not yet verified |
-| RadioMaster TX16S / TX16S MKII | STM32 F429xI · 2 MB | Colour | Full (.bin) | ✅ Verified (owner) on v1.1.2 full build; 1.1.22 beta smoke-tested by the owner 2026-10-25 |
+| RadioMaster TX16S / TX16S MKII | STM32 F429xI · 2 MB | Colour | Full (.bin) | ✅ Verified (owner) on v1.2.0 full build, 2026-11-01 |
 | RadioMaster TX16S MK3 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | 🔨 Built, not yet verified |
-| RadioMaster Zorro | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Companion build not yet verified (full build verified on v1.1.2) |
+| RadioMaster Zorro | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.2.0 companion build, 2026-11-01 |
 
 Notes:
 - **FrSky Q X7 vs Q X7 ACCESS are different radios** (STM32F205 vs STM32F407). Flash the file for your model. Only the

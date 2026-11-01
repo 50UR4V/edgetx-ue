@@ -19,9 +19,11 @@ EdgeTX does. With the overlay compiled out, the build is byte-for-byte identical
 ## Download
 Get the `.bin` (or `.uf2` for H750 radios) for your radio from **[Releases](../../releases)** and follow `FLASHING.md` in that release.
 
-**v1.1.2.3** (Latest, production): full builds for RadioMaster Pocket, Zorro, TX16S and FrSky QX7 / QX7S (**not** the
-QX7 ACCESS), for app 1.3.2 on Google Play. **1.1.22** (pre-release, beta): 56 EdgeTX radios (companion build on
-black-and-white radios, full build on colour radios), for app 1.4.3 on Play open testing. Which to pick:
+**v1.2.0** (Latest, production and beta): RadioMaster Pocket, Zorro and FrSky QX7 / QX7S (**not** the QX7 ACCESS) as
+companion builds, RadioMaster TX16S as a full build, hardware-verified 2026-11-01; for app 1.6.0 on Google Play and
+1.6.1 on Play open testing. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to keep the radio's own
+menus. **1.1.22** (pre-release, beta): the other EdgeTX radios (companion build on black-and-white radios, full build
+on colour radios), built, not yet verified. Which to pick:
 [User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
 
 A radio is marked **Verified** only after the checklist in `SUPPORTED-RADIOS.md` has passed on real hardware. Every

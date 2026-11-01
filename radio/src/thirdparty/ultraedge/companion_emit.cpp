@@ -1541,7 +1541,8 @@ static volatile bool s_companionActive = false;            // set true once HELL
 // Negotiated peer capabilities (docs/protocol/PROTOCOL-V4.md §3.1), from the app's HELLO. Feature
 // emit is gated on the INTERSECTION of what this build supports and what the app advertised, so a
 // v3 (no-caps) app still gets the legacy wire. This build's own advertised caps:
-static const uint32_t UE_LOCAL_CAPS = CAP_STRUCTURED | CAP_AUDIO | CAP_TELEM_TYPED | CAP_MODEL_FILE | CAP_CALIB | CAP_PUSH_ACK;
+static const uint32_t UE_LOCAL_CAPS = CAP_STRUCTURED | CAP_AUDIO | CAP_TELEM_TYPED | CAP_MODEL_FILE | CAP_CALIB | CAP_PUSH_ACK
+                                     | CAP_MODEL_EVENTS;   // s50
 
 static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len);   // fwd decl (defined below) — for ueCalTick
 
@@ -2069,6 +2070,7 @@ static Sub s_subHome     = { false, 0, 0 };   // Home-screen telemetry (docs/13)
 static Sub s_subTelem    = { false, 0, 0 };   // live telemetry sensors (docs/15)
 static Sub s_subTelemRaw = { false, 0, 0 };   // raw SPort/CRSF passthrough for ecosystem Lua (docs/32)
 static Sub s_subSources  = { false, 0, 0 };   // live input sources: sticks/pots/switches (docs/37)
+static Sub s_subModState = { false, 0, 0 };   // s45 (ADR-0048): bind/range state while an RF page is open
 
 // ---- B4b: UX handoff (single-owner UX-plane SF) ----------------------------
 // The app asserts ownership of UX-plane SF output while attached (MSG_UX_OWNER present=1). When set,
@@ -2449,6 +2451,41 @@ static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg)
   }
 }
 
+// s44 (HF-2, owner report 2026-10-25): modules the app put into BIND or RANGECHECK. A range check keeps the module at
+// reduced power, so it must never outlive the companion session that started it (EdgeTX's own range dialog ends it
+// on close; the app's page can't be "closed" when the cable is pulled).
+static uint8_t s_appModMask = 0;
+static bool s_modStateDirty = false;   // s45: send MSG_MOD_STATE at the next tick
+
+// s45 (ADR-0048): the same side effects as EdgeTX's MODEL SETUP bind/range buttons (gui/128x64/model_setup.cpp).
+static void ueSetModuleModeLikeEdgeTX(uint8_t mod, ModuleSettingsMode md)
+{
+  uint8_t old = moduleState[mod].mode;
+  if (md == MODULE_MODE_BIND && isModuleELRS(mod))
+    AUDIO_PLAY(AU_SPECIAL_SOUND_CHEEP);   // ELRS bind is a single frame: EdgeTX plays the sound itself
+  setModuleMode(mod, md);
+#if defined(MULTIMODULE)
+  if (isModuleMultimodule(mod) && old != md) {
+    if (md == MODULE_MODE_BIND) setMultiBindStatus(mod, MULTI_BIND_INITIATED);
+    else if (getMultiBindStatus(mod) != MULTI_BIND_NONE) setMultiBindStatus(mod, MULTI_BIND_NONE);
+  }
+#endif
+#if defined(DSMP)
+  if (isModuleDSMP(mod) && old != md && old == MODULE_MODE_BIND) restartModule(mod);   // EdgeTX restarts DSMP after bind
+#endif
+  (void)old;
+}
+
+static void ueStopAppModActions()
+{
+  for (uint8_t mod = 0; mod < NUM_MODULES; mod++) {
+    if (!(s_appModMask & (1u << mod))) continue;
+    if (moduleState[mod].mode == MODULE_MODE_BIND || moduleState[mod].mode == MODULE_MODE_RANGECHECK)
+      ueSetModuleModeLikeEdgeTX(mod, MODULE_MODE_NORMAL);
+  }
+  s_appModMask = 0;
+}
+
 // Decoder callback: one decoded, CRC-valid frame.
 static void onFrame(const Message& m, void*)
 {
@@ -2529,14 +2566,26 @@ static void onFrame(const Message& m, void*)
   }
   else if (m.type == MSG_MOD_ACTION) {
     // Set 3c: bind / range / stop on a module via EdgeTX's own setModuleMode. GATED on ATTACHED.
-    if (s_link.companionInputAllowed() && m.len >= 2) {
+    // s44 (HF-2): remember which modules the app put into bind/range so a lost link returns them to NORMAL.
+    // s45 (ADR-0048): answered (ACK / NACK), EdgeTX's availability rules and side effects applied, state reported.
+    uint8_t reason = 0;
+    if (!s_link.companionInputAllowed()) reason = NACK_NOT_ATTACHED;
+    else if (m.len < 2) reason = NACK_BAD_LENGTH;
+    else if (m.payload[0] >= NUM_MODULES) reason = NACK_OUT_OF_RANGE;
+    else {
       uint8_t mod = m.payload[0], act = m.payload[1];
-      if (mod < NUM_MODULES) {
+      if (act == 1 && !isModuleBindRangeAvailable(mod)) reason = NACK_UNSUPPORTED;
+      else if (act == 2 && !isModuleRangeAvailable(mod)) reason = NACK_UNSUPPORTED;
+      else {
         ModuleSettingsMode md = (act == 1) ? MODULE_MODE_BIND
                               : (act == 2) ? MODULE_MODE_RANGECHECK : MODULE_MODE_NORMAL;
-        setModuleMode(mod, md);
+        ueSetModuleModeLikeEdgeTX(mod, md);
+        if (md == MODULE_MODE_NORMAL) s_appModMask &= (uint8_t)~(1u << mod); else s_appModMask |= (uint8_t)(1u << mod);
+        s_modStateDirty = true;
       }
     }
+    if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
+    else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
   }
   else if (m.type == MSG_LIST_OP) {
     // Structural list edit (docs/13). GATED on ATTACHED, like writes.
@@ -2568,6 +2617,7 @@ static void onFrame(const Message& m, void*)
       else if (stream == STREAM_TELEMETRY) { s_subTelem.active = true; s_subTelem.rateHz = rate; s_subTelem.accumMs = 0; }
       else if (stream == STREAM_TELEM_RAW) { s_subTelemRaw.active = true; s_subTelemRaw.rateHz = rate; s_subTelemRaw.accumMs = 0; telemQueueSet(true); }
       else if (stream == STREAM_SOURCES) { s_subSources.active = true; s_subSources.rateHz = rate; s_subSources.accumMs = 0; }
+      else if (stream == STREAM_MODSTATE) { s_subModState.active = true; s_subModState.rateHz = rate ? rate : 2; s_subModState.accumMs = 0; s_modStateDirty = true; }
       uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1);
     }
   }
@@ -2579,6 +2629,7 @@ static void onFrame(const Message& m, void*)
       else if (stream == STREAM_TELEMETRY) s_subTelem.active = false;
       else if (stream == STREAM_TELEM_RAW) { s_subTelemRaw.active = false; telemQueueSet(false); }
       else if (stream == STREAM_SOURCES) s_subSources.active = false;
+      else if (stream == STREAM_MODSTATE) s_subModState.active = false;
       uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1);
     }
   }
@@ -2864,6 +2915,31 @@ static void onFrame(const Message& m, void*)
   }
 }
 
+// s50 (ADR-0053): announce every change of the active model file — the radio's own model menu, a Lua script, the app's
+// SELECT/NEW — so the app never shows a model the radio isn't flying (field report 2026-10-31). Compared once per tick
+// (a few bytes, no SD); the baseline is taken on the first ATTACHED tick, since the app reads the model on attach.
+static char s_ueModelSeen[32];
+static bool s_ueModelSeenValid = false;
+static void ueActiveModelFile(char* buf, size_t sz) {
+#if defined(STORAGE_MODELSLIST)
+  strncpy(buf, g_eeGeneral.currModelFilename, sz - 1); buf[sz - 1] = 0;
+#else
+  getModelNumberStr(g_eeGeneral.currModel, buf);
+  strncat(buf, MODEL_FILENAME_SUFFIX, sz - strlen(buf) - 1);
+#endif
+}
+static void ueModelChangeTick() {
+  if (!s_link.companionInputAllowed()) { s_ueModelSeenValid = false; return; }   // re-baselined on every (re)attach
+  char cur[sizeof(s_ueModelSeen)]; ueActiveModelFile(cur, sizeof(cur));
+  if (s_ueModelSeenValid && !strcmp(cur, s_ueModelSeen)) return;
+  bool announce = s_ueModelSeenValid;
+  strcpy(s_ueModelSeen, cur); s_ueModelSeenValid = true;
+  if (!announce || !cur[0]) return;
+  uint8_t p[1 + sizeof(s_ueModelSeen)]; uint8_t l = (uint8_t)strlen(cur);
+  p[0] = l; memcpy(p + 1, cur, l);
+  emitMsg(MSG_MODEL_CHANGED, p, (uint16_t)(1 + l));
+}
+
 // Called from per10ms() (main context, ~100 Hz).
 extern "C" void ultraedgeCompanionTick()
 {
@@ -2880,12 +2956,14 @@ extern "C" void ultraedgeCompanionTick()
     s_inited = false;
     s_descActive = false; s_descLen = 0;   // abandon any in-flight describe job
     s_subTelemRaw.active = false; telemQueueSet(false);   // release the telemetry-queue registration
-    s_subSources.active = false;
+    s_subSources.active = false; s_subModState.active = false;
     if (s_pushActive) ueModelPushDiscard();   // Phase 3: abandon any in-flight model push, keep original
     s_uxOwner = false; s_sfHead = s_sfTail = 0;   // B4b: relinquish UX ownership on link down (radio resumes UX)
+    ueStopAppModActions();                       // s44 (HF-2): no range check (reduced power) or bind left running
     s_link.onTransportDown();
     return;
   }
+  if (s_appModMask && !s_link.companionInputAllowed()) ueStopAppModActions();   // s44: link lost without unplug
 
   UE_CRUMB(10);   // SERIAL mode + USB started: companion engaging
 
@@ -2931,6 +3009,7 @@ extern "C" void ultraedgeCompanionTick()
   UE_CRUMB(20);   // HELLO seen: companion ACTIVE (host opted in)
 
   ueCalTick();   // Set 4: drive EdgeTX calibration + stream live analog while a cal session is active
+  ueModelChangeTick();   // s50 (ADR-0053): MSG_MODEL_CHANGED when the active model changes, whoever changed it
 
   uint8_t f[MAX_FRAME_WIRE]; size_t n;
 
@@ -3091,6 +3170,32 @@ extern "C" void ultraedgeCompanionTick()
   // Input sources (docs/37): live sticks/pots/switches as {u8 count, [u16 mixsrc, i16 value]} in
   // EdgeTX ±1024. Keyed by MIXSRC id (mode-independent: MIXSRC_Thr is always throttle) so the app
   // resolves getValue('thr'…) and detects "moved source" for auto-select in input pickers.
+  // s45 (ADR-0048): bind/range state for the app's RF status card — on every change and at the subscribed rate.
+  if (s_subModState.active) {
+    s_subModState.accumMs += 10;
+    uint16_t periodMs = (uint16_t)(1000 / (s_subModState.rateHz ? s_subModState.rateHz : 2));
+    if (s_modStateDirty || s_subModState.accumMs >= periodMs) {
+      s_subModState.accumMs = 0; s_modStateDirty = false;
+      uint8_t ms[NUM_MODULES * 3];
+      for (uint8_t mod = 0; mod < NUM_MODULES; mod++) {
+        uint8_t mode = moduleState[mod].mode, flags = 0;
+#if defined(MULTIMODULE)
+        // EdgeTX's GUI ends a MULTI bind when the module reports it finished; with the menu not open, do it here.
+        if (isModuleMultimodule(mod) && getMultiBindStatus(mod) == MULTI_BIND_FINISHED) {
+          flags |= 0x02; setMultiBindStatus(mod, MULTI_BIND_NONE);
+          if (mode == MODULE_MODE_BIND) { setModuleMode(mod, MODULE_MODE_NORMAL); mode = MODULE_MODE_NORMAL; s_appModMask &= (uint8_t)~(1u << mod); }
+        }
+#endif
+        if (TELEMETRY_STREAMING()) flags |= 0x01;
+        if (isModuleBeeping(mod)) flags |= 0x04;
+        ms[mod * 3 + 0] = (mode == MODULE_MODE_BIND) ? 1 : (mode == MODULE_MODE_RANGECHECK) ? 2 : 0;
+        ms[mod * 3 + 1] = flags;
+        ms[mod * 3 + 2] = (uint8_t)((isModuleBindRangeAvailable(mod) ? 0x01 : 0) | (isModuleRangeAvailable(mod) ? 0x02 : 0));
+      }
+      emitMsg(MSG_MOD_STATE, ms, sizeof(ms));
+    }
+  }
+
   if (s_subSources.active) {
     s_subSources.accumMs += 10;
     uint16_t periodMs = (uint16_t)(1000 / s_subSources.rateHz);
