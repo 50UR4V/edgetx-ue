@@ -4,8 +4,7 @@
 it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
 that it works on the real radio.
 
-Firmware **v1.2.0** for Pocket, Zorro, TX16S and QX7 (app **1.6.0**, or **1.6.1 beta**); every other radio: **1.1.22
-(beta)**, app 1.4.3 or newer. EdgeTX base `90bbce17`.
+Firmware **v1.2.0** for every radio below (app **1.6.0**, or **1.6.1 beta**). EdgeTX base `90bbce17`.
 
 Hardware-verified on v1.2.0 by the owner on 2026-11-01: Pocket, Zorro and QX7 (companion) and TX16S (full).
 
@@ -113,7 +112,7 @@ Companion build the radio's own menus are gone; to get them back, flash stock Ed
 
 1. **Flash** the file for your radio from the firmware release (EdgeTX Buddy, or the bootloader). Flashing guide:
    `FLASHING.md` on the release.
-2. **Version page:** the radio shows `ultraedge-<your radio>` and `UE 1.1.22`. On a Companion build, open any menu:
+2. **Version page:** the radio shows `ultraedge-<your radio>` and `UE 1.2.0`. On a Companion build, open any menu:
    the "settings are in the UltraEdge app" screen shows the same version, git and date.
 3. **Connect the app:** plug the phone in by USB and open UltraEdge. It connects and shows live channels.
 4. **Edit and save a model:** change something small (a mix weight or a model name), save, and check it on the
