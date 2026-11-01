@@ -28,6 +28,12 @@
 #include "yaml_inputs.inc"
 #include "yaml_datastructs_funcs.cpp"
 
+#if defined(USB_COMPANION)
+// UltraEdge s30 (ADR-0033): give the SF name table external linkage so the companion can report this
+// build's Special Functions to the app (MSG_RADIO_INFO). Flag-OFF builds are unchanged.
+extern const struct YamlIdStr enum_Functions[];
+#endif
+
 #if defined(PCBX10) || defined(PCBX12S)
  #if defined(RADIO_T15)
   #include "yaml_datastructs_t15.cpp"

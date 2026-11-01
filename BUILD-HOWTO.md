@@ -6,8 +6,8 @@ flag: `-DUSB_COMPANION=ON`**.
 
 **Codespaces** needs nothing installed. **Local** is faster if you already build EdgeTX.
 
-> Most radios don't need a build: [Releases](../../releases) has v1.1.2.3 for Pocket, Zorro, TX16S and QX7, and the
-> 1.1.22 beta for 56 radios. Build only if your radio isn't there or you want to change the config.
+> Most radios don't need a build: [Releases](../../releases) has v1.2.0 for Pocket, Zorro, TX16S and QX7 (v1.1.2.4
+> full builds as the fallback), and the 1.1.22 beta for the other radios. Build only if your radio isn't there or you want to change the config.
 
 ---
 

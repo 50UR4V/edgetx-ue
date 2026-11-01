@@ -55,8 +55,8 @@
 
 // UltraEdge builds (s28, owner 2026-10-12; s38, owner 2026-10-23: "always synced … in every firmware build"): the
 // Version page shows the UltraEdge identity — FW name, UltraEdge version + variant, the UltraEdge source commit (GIT#)
-// and the UltraEdge build time (DATE) — plus the EdgeTX commit it is built on (BASE). Production line (p1): the app
-// shows these from firmware 1.1.19 / app 1.4 on (MSG_RADIO_INFO v2). Display strings only — the
+// and the UltraEdge build time (DATE) — plus the EdgeTX commit it is built on (BASE). The same values reach the app in
+// MSG_RADIO_INFO v2 (companion_emit.cpp), so the radio and the app always agree. Display strings only — the
 // bootloader/flasher identify firmware by firmware_version below ("edgetx-…"), which is unchanged. Stock builds
 // (no USB_COMPANION) are byte-identical.
 // thirdparty/ultraedge/ue_version.h is written by build-fw.sh before EVERY build (a header, not a CMake flag: EdgeTX's

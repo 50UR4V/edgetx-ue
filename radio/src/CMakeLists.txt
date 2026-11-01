@@ -17,6 +17,7 @@ option(FLIGHT_MODES "Flight Modes" ON)
 option(CURVES "Curves" ON)
 option(GVARS "Global variables" ON)
 option(GUI "GUI enabled" ON)
+option(UI_COMPANION "UltraEdge: drop native config-editor menus/audio/voice/haptic (phone is the UI/UX)" OFF)
 option(PPM_CENTER_ADJUSTABLE "PPM center adjustable" ON)
 option(PPM_LIMITS_SYMETRICAL "PPM limits symetrical" OFF)
 option(OVERRIDE_CHANNEL_FUNCTION "OverrideChannel function available" ON)
@@ -127,6 +128,18 @@ set(${RADIO_NAME} YES)
 add_definitions(
   -DCPU_TYPE=${CPU_TYPE} -DCPU_TYPE_FULL=${CPU_TYPE_FULL}
 )
+
+# UltraEdge s49 (owner 2026-10-31): a firmware image must not depend on the folder it was built in. GCC embeds the
+# absolute source path wherever __FILE__ is used (the colour builds carry two: an assert in storage/rlc.cpp and one in
+# thirdparty/stb/stb_image.h), so the same source built in two checkouts differed by the path length. Map the source and
+# build directories to fixed names in those strings; the released bins then rebuild byte-identically (but for the build
+# stamp) from any folder — what the public edgetx-ue tag promises. Debug info is unaffected (not in the .bin).
+if(NOT NATIVE_BUILD)
+  add_compile_options(
+    "-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=."
+    "-fmacro-prefix-map=${CMAKE_BINARY_DIR}=build"
+  )
+endif()
 
 # UltraEdge: define USB_COMPANION here — BEFORE add_executable(firmware) — so the
 # flag reaches EVERY firmware source. Defining it after the target was the HW-2 bug.
@@ -293,6 +306,10 @@ endif()
 if(GVARS)
   add_definitions(-DGVARS)
   set(SRC ${SRC} gvars.cpp)
+endif()
+
+if(UI_COMPANION)
+  add_definitions(-DUI_COMPANION)   # UltraEdge: phone provides the UI/UX; drop native menus (see gui CMakeLists)
 endif()
 
 if(FAI STREQUAL YES)
