@@ -2096,6 +2096,19 @@ static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg)
   }
 }
 
+// p5 = s44 (HF-2, owner report 2026-10-25): modules the app put into BIND or RANGECHECK. A range check keeps the
+// module at reduced power, so it must never outlive the companion session that started it.
+static uint8_t s_appModMask = 0;
+static void ueStopAppModActions()
+{
+  for (uint8_t mod = 0; mod < NUM_MODULES; mod++) {
+    if (!(s_appModMask & (1u << mod))) continue;
+    if (moduleState[mod].mode == MODULE_MODE_BIND || moduleState[mod].mode == MODULE_MODE_RANGECHECK)
+      setModuleMode(mod, MODULE_MODE_NORMAL);
+  }
+  s_appModMask = 0;
+}
+
 // Decoder callback: one decoded, CRC-valid frame.
 static void onFrame(const Message& m, void*)
 {
@@ -2182,6 +2195,7 @@ static void onFrame(const Message& m, void*)
         ModuleSettingsMode md = (act == 1) ? MODULE_MODE_BIND
                               : (act == 2) ? MODULE_MODE_RANGECHECK : MODULE_MODE_NORMAL;
         setModuleMode(mod, md);
+        if (md == MODULE_MODE_NORMAL) s_appModMask &= (uint8_t)~(1u << mod); else s_appModMask |= (uint8_t)(1u << mod);   // p5 (HF-2)
       }
     }
   }
@@ -2440,9 +2454,11 @@ extern "C" void ultraedgeCompanionTick()
     s_subSources.active = false;
     if (s_pushActive) ueModelPushDiscard();   // Phase 3: abandon any in-flight model push, keep original
     s_uxOwner = false; s_sfHead = s_sfTail = 0;   // B4b: relinquish UX ownership on link down (radio resumes UX)
+    ueStopAppModActions();                       // p5 (HF-2): no range check (reduced power) or bind left running
     s_link.onTransportDown();
     return;
   }
+  if (s_appModMask && !s_link.companionInputAllowed()) ueStopAppModActions();   // p5: link lost without unplug
 
   UE_CRUMB(10);   // SERIAL mode + USB started: companion engaging
 
