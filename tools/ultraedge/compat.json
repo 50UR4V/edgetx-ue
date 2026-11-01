@@ -1,0 +1,64 @@
+{
+  "_doc": "UltraEdge self-build compatibility matrix (ADR-0049). One row per published firmware source tag on the public fork. The EdgeTX base is FIXED by the UltraEdge version: the overlay patches apply only onto the base they were authored against (docs/analysis/SELF-BUILD-FIRMWARE.md §2). Add a row when a tag is published; never edit a published row except 'status', 'exclude' and 'warn'. 'status': current (offered in the forms), pending (builds locally, not offered until its tag is public), retired. Which radios are VERIFIED is not kept here: it comes from docs/release-collateral/SUPPORTED-RADIOS.md at staging (a row with 'verified_section' uses only the SUPPORTED-RADIOS section whose heading contains that text). 'image' = the EdgeTX build container for that base (default ghcr.io/edgetx/edgetx-dev:latest). 'edgetx.version_tag' (only on a stable EdgeTX base) = EDGETX_VERSION_TAG, so EdgeTX's own version string reads it instead of 'pre-<x.y.z>-selfbuild'. 'exclude' = known not to build (reason shown); 'warn' = expected trouble, offered anyway; the release-build workflow's first run on a tag confirms or clears both.",
+  "_license": "GPL-2.0-only",
+  "repo": "50UR4V/edgetx-ue",
+  "versions": [
+    {
+      "id": "1.2.0",
+      "channel": "production",
+      "status": "current",
+      "tag": "v1.2.0",
+      "edgetx": {
+        "label": "3.0-dev (main, 2026-08-29)",
+        "commit": "90bbce1763ac086ab572882a0e2e8ae17b2ffa3b"
+      },
+      "app": "1.6.0 (Play production) / 1.6.1 (open testing)",
+      "proto": 4,
+      "radios": "*",
+      "ui_companion": [
+        "128x64",
+        "212x64"
+      ]
+    },
+    {
+      "id": "1.1.22",
+      "channel": "beta",
+      "status": "retired",
+      "tag": "v1.1.22",
+      "edgetx": {
+        "label": "3.0-dev (main, 2026-08-29)",
+        "commit": "90bbce1763ac086ab572882a0e2e8ae17b2ffa3b"
+      },
+      "app": "1.4.3 beta (Play open testing)",
+      "proto": 4,
+      "radios": "*",
+      "ui_companion": [
+        "128x64",
+        "212x64"
+      ]
+    },
+    {
+      "id": "1.1.2.3",
+      "channel": "production",
+      "status": "retired",
+      "tag": "v1.1.2.3",
+      "edgetx": {
+        "label": "3.0-dev (main, 2026-08-29)",
+        "commit": "90bbce1763ac086ab572882a0e2e8ae17b2ffa3b"
+      },
+      "app": "1.3.2 (Play production)",
+      "proto": 4,
+      "radios": "*",
+      "ui_companion": [],
+      "exclude": {
+        "nb4p": "its bootloader needs the s39 build-order fix, which is in the beta only"
+      },
+      "warn": {
+        "x9d": "the full-menu build was 29-33 KB too big for 512 KB on the beta; the beta's companion build fits",
+        "x9dp": "the full-menu build was 29-33 KB too big for 512 KB on the beta; the beta's companion build fits",
+        "x9dp2019": "the full-menu build was 29-33 KB too big for 512 KB on the beta; the beta's companion build fits",
+        "x9e": "the full-menu build was 29-33 KB too big for 512 KB on the beta; the beta's companion build fits"
+      }
+    }
+  ]
+}
