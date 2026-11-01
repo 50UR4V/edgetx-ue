@@ -147,12 +147,15 @@ echo ">> cmake $OPTS"
 cmake -S "$SRC" -B "$builddir" ${gen[@]+"${gen[@]}"} $OPTS -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev \
   || die "[$flav] cmake configure failed"
 LOG="$OUT/$RADIO.log"
-# EdgeTX's make build (no Ninja in the edgetx-dev image) can compile a board file before its generated *.inc exists
-# (seen on C14: stm32_pwm_inputs.inc). That race leaves the header generated, so one more pass completes the build.
+# EdgeTX's make build (no Ninja in the edgetx-dev image) can compile board_lib before a hw_defs header it includes is
+# generated: the generator target is a dependency of 'board' only (seen on C14: stm32_pwm_inputs.inc). Build that
+# generator target in the inner build, then the firmware again.
 build_fw() { cmake --build "$builddir" --target firmware ${JOBS:+--parallel "$JOBS"} 2>&1 | tee "$LOG"; }
 ok=1; build_fw || ok=0
-if [ "$ok" = 0 ] && grep -aqE 'fatal error: [A-Za-z0-9_]+\.inc: No such file' "$LOG"; then
-  echo ">> [$flav] a generated header wasn't ready (parallel make race); building again"; ok=1; build_fw || ok=0
+gen="$(grep -aoE 'fatal error: [A-Za-z0-9_]+\.inc: No such file' "$LOG" | head -1 | sed -E 's/fatal error: ([A-Za-z0-9_]+)\.inc.*/\1/' || true)"
+if [ "$ok" = 0 ] && [ -n "$gen" ] && [ -d "$builddir/arm-none-eabi" ]; then
+  echo ">> [$flav] generated header $gen.inc missing (make target order); generating it, then building again"
+  cmake --build "$builddir/arm-none-eabi" --target "$gen" 2>&1 | tee -a "$LOG" && { ok=1; build_fw || ok=0; }
 fi
 if [ "$ok" = 0 ]; then
   # Same classification as build-fw-all-radios.sh: linker overflow (bytes over) vs the first compile error.
