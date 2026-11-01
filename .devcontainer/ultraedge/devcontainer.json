@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// UltraEdge build container for GitHub Codespaces (ADR-0049). GENERATED from the UltraEdge monorepo
+// (firmware/selfbuild/devcontainer.json by stage.sh fork); lives at .devcontainer/ultraedge/ in the fork.
+// EdgeTX's own .devcontainer/devcontainer.json is left as upstream ships it.
+{
+  "name": "UltraEdge firmware build",
+  "image": "ghcr.io/edgetx/edgetx-dev:latest",
+  "runArgs": ["--ipc=host"],
+  "customizations": { "vscode": { "extensions": ["ms-vscode.cpptools"] } },
+  "postCreateCommand": "git submodule update --init --recursive",
+  "postAttachCommand": "echo; echo 'UltraEdge: build your radio with   tools/ultraedge/ue-build.sh <radio>'; echo 'List the radios with              tools/ultraedge/ue-build.sh list'; echo 'The firmware lands in out/ (right-click it > Download).'"
+}

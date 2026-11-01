@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Release build: every radio for one published UltraEdge tag, in parallel, on GitHub-hosted runners. ADR-0049 (D5).
+# GENERATED from the UltraEdge monorepo (firmware/selfbuild/release-build.yml.in by stage.sh fork) — edit there.
+#
+# Replaces the one-off 56-radio run on the build Mac (build-fw-all-radios.sh, ADR-0041). Same recipe as the public
+# self-build form (tools/ultraedge/ue-build.sh), with --official: the binaries carry the plain version label.
+# Output: one artifact with every firmware (named as on the Release), its identity .txt, SHA256SUMS.txt and build-summary.tsv (OK / doesn't fit /
+# compile error per radio). Optionally attaches them to the tag's GitHub Release (which must already exist).
+# Run it from the Actions tab: Release build ▸ Run workflow. Free on this public repository.
+name: Release build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ultraedge:
+        description: "UltraEdge version (tag) to build"
+        type: choice
+        options:
+          - "1.2.0 production · EdgeTX 3.0-dev (main, 2026-08-29)"
+      radios:
+        description: "Radios: all, or keys separated by spaces (e.g. pocket qx7 tx16s zorro)"
+        type: string
+        default: all
+      attach:
+        description: "Attach the files to the tag's GitHub Release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      radios: ${{ steps.plan.outputs.radios }}
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/ultraedge
+      - id: plan
+        env:
+          UE: ${{ inputs.ultraedge }}
+          RADIOS: ${{ inputs.radios }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          d = json.load(open("tools/ultraedge/compat.json"))
+          ue = os.environ["UE"].split()[0]
+          row = next(v for v in d["versions"] if v["id"] == ue)
+          keys = [l.split("|")[0] for l in open("tools/ultraedge/targets.tsv") if l.strip() and not l.startswith("#")]
+          want = os.environ["RADIOS"].split()
+          if want != ["all"]:
+              bad = [k for k in want if not re.fullmatch(r"[a-z0-9]+", k) or k not in keys]
+              if bad: raise SystemExit(f"::error::unknown radio key(s): {' '.join(bad)}")
+              keys = want
+          if row["radios"] != "*": keys = [k for k in keys if k in row["radios"]]
+          keys = [k for k in keys if k not in row.get("exclude", {})]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as o:
+              o.write(f"tag={row['tag']}\nversion={ue}\nradios={json.dumps(keys)}\n"
+                      f"image={row.get('image', 'ghcr.io/edgetx/edgetx-dev:latest')}\n")
+          print(f"UltraEdge {ue} ({row['tag']}): {len(keys)} radios")
+          PY
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        radio: ${{ fromJSON(needs.plan.outputs.radios) }}
+    container:
+      image: ${{ needs.plan.outputs.image }}   # EdgeTX's build image for this version's EdgeTX base
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: recipe
+          sparse-checkout: tools/ultraedge
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+          path: src
+          submodules: recursive
+      - name: Build ${{ matrix.radio }}
+        env:
+          RADIO: ${{ matrix.radio }}
+          UE_SOURCE: "https://github.com/${{ github.repository }} @ ${{ needs.plan.outputs.tag }}"
+          UE_BUILD_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/src"
+          recipe/tools/ultraedge/ue-build.sh "$RADIO" --official --src src --out out --jobs "$(nproc)"
+      - name: Keep the result (also when the build failed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fw-${{ matrix.radio }}
+          path: |
+            out/*.bin
+            out/*.uf2
+            out/*.txt
+            out/*.result
+          if-no-files-found: warn
+          retention-days: 14
+
+  collect:
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only used when 'attach' is ticked
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fw-*
+          path: fw
+          merge-multiple: true
+      - name: Summary, checksums
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          RADIOS: ${{ needs.plan.outputs.radios }}
+        run: |
+          cd fw
+          python3 - <<'PY'
+          import json, os
+          rows, ok = [], 0
+          for k in json.loads(os.environ["RADIOS"]):
+              p = f"{k}.result"
+              r = open(p).read().strip().split("|") if os.path.exists(p) else ["FAIL", "no result (job crashed or timed out)"]
+              ok += r[0] == "OK"
+              rows.append([k] + r)
+          with open("build-summary.tsv", "w") as f:
+              for r in rows: f.write("\t".join(r) + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write(f"### UltraEdge {os.environ['VERSION']}: {ok} of {len(rows)} radios built\n\n| Radio | Result | File / reason | Bytes | Free |\n|---|---|---|---|---|\n")
+              for r in rows: s.write("| " + " | ".join(r + [""] * (5 - len(r))) + " |\n")
+          PY
+          rm -f ./*.result
+          sha256sum edgetx-ue-*.bin edgetx-ue-*.uf2 2>/dev/null > SHA256SUMS.txt || true
+          ls -la
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UltraEdge-fw-${{ needs.plan.outputs.version }}-all-radios
+          path: fw/
+          retention-days: 30
+      - name: Attach to the GitHub Release
+        if: inputs.attach
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: gh release upload "$TAG" fw/edgetx-ue-* fw/SHA256SUMS.txt fw/build-summary.tsv --clobber -R "${{ github.repository }}"
