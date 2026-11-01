@@ -147,7 +147,14 @@ echo ">> cmake $OPTS"
 cmake -S "$SRC" -B "$builddir" ${gen[@]+"${gen[@]}"} $OPTS -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev \
   || die "[$flav] cmake configure failed"
 LOG="$OUT/$RADIO.log"
-if ! cmake --build "$builddir" --target firmware ${JOBS:+--parallel "$JOBS"} 2>&1 | tee "$LOG"; then
+# EdgeTX's make build (no Ninja in the edgetx-dev image) can compile a board file before its generated *.inc exists
+# (seen on C14: stm32_pwm_inputs.inc). That race leaves the header generated, so one more pass completes the build.
+build_fw() { cmake --build "$builddir" --target firmware ${JOBS:+--parallel "$JOBS"} 2>&1 | tee "$LOG"; }
+ok=1; build_fw || ok=0
+if [ "$ok" = 0 ] && grep -aqE 'fatal error: [A-Za-z0-9_]+\.inc: No such file' "$LOG"; then
+  echo ">> [$flav] a generated header wasn't ready (parallel make race); building again"; ok=1; build_fw || ok=0
+fi
+if [ "$ok" = 0 ]; then
   # Same classification as build-fw-all-radios.sh: linker overflow (bytes over) vs the first compile error.
   over="$(grep -aoE "overflowed by [0-9]+ bytes" "$LOG" | head -1 | grep -oE '[0-9]+' || true)"
   [ -n "$over" ] && die "[$flav] doesn't fit: $over bytes over $((flash / 1024)) KB"
