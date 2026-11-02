@@ -17,7 +17,7 @@ EdgeTX ships a dev container, so a Codespace comes with the full toolchain prein
 guide for background: <https://edgetx.org/edgetx/latest/building/codespaces/>.
 
 1. **Fork isn't required** — on this repo, click **`< > Code` ▸ Codespaces ▸ Create codespace** on branch `ultraedge`
-   (production) or `ultraedge-beta` (beta).
+   (tag `v1.2.0` is the current release, companion and full builds alike).
    Wait for the container to finish building (first run takes a few minutes).
 2. In the Codespace terminal, configure + build for your radio (example: **RadioMaster Pocket**):
    ```bash
@@ -70,24 +70,77 @@ Once `arm-none-eabi-gcc` is on your `PATH`, the same `cmake … && cmake --build
 
 ## Per-radio flags
 
-`-DPCB` / `-DPCBREV` select the board; the rest are the **flash-fit** levers (Pocket/QX7 are 512 KB-class
-and the companion sits near the ceiling, so trim unused subsystems). Keep **`-DLUA` on** — the companion's
-raw-telemetry passthrough uses EdgeTX's LUA-gated TelemetryQueue and won't compile without it.
+Every build uses `-DTRANSLATIONS=EN -DDEFAULT_TEMPLATE_SETUP=17 -DUSB_COMPANION=ON` plus the radio's flags below:
+the flags the v1.2.0 release files were built with. `-DPCB` / `-DPCBREV` select the board. On the 512 KB Pocket,
+Zorro and QX7 the companion sits near the flash ceiling, so `MULTIMODULE`, `HELI` and `GHOST` are trimmed there. Keep
+**`-DLUA` on**: the companion's raw-telemetry passthrough uses EdgeTX's LUA-gated TelemetryQueue and won't compile
+without it.
 
-| Radio | Key flags | Notes |
+**Companion build:** `-DUI_COMPANION=YES` removes the radio's own model and radio-settings menus; those settings are
+then made in the app. The release uses it on every black-and-white radio (128×64 and 212×64 screens). Leave it out
+for a full build that keeps every EdgeTX menu (it may not fit in 512 KB of flash). Colour radios always build full.
+
+| Radio | Flags | Notes |
 |---|---|---|
-| RadioMaster **Pocket** | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified (v1.1.2 full build). Internal CROSSFIRE; external DIY-multi and external PXX1 are left out to fit flash. ~10 KB flash headroom. |
-| FrSky **QX7 / QX7S (not the ACCESS model)** | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES` | ✅ Verified (v1.1.2.3). Internal module **is** XJT/PXX1 — keep `PXX1=YES`. |
-| RadioMaster **TX16S** | `-DPCB=X10 -DPCBREV=TX16S` | ✅ Verified (v1.1.2.3). 2 MB flash, so no trims needed. Prebuilt in Releases. |
-| RadioMaster **Zorro** | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO` | ✅ Verified (v1.1.2 full build). Mono, Pocket-twin; tight flash fit. |
+| RadioMaster Pocket | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.0 (2026-11-01), companion build. Internal CROSSFIRE; external multi and PXX1 left out to fit flash. |
+| RadioMaster Zorro | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.0 (2026-11-01), companion build. Tight flash fit, like the Pocket. |
+| FrSky Taranis Q X7 / Q X7S | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES -DUI_COMPANION=YES` | Verified on v1.2.0 (2026-11-01), companion build. The internal module is XJT/PXX1, so keep `PXX1=YES`. |
+| RadioMaster TX16S / TX16S MKII | `-DPCB=X10 -DPCBREV=TX16S` | Verified on v1.2.0 (2026-11-01), full build. |
+| FrSky Taranis Q X7 ACCESS | `-DPCB=X7 -DPCBREV=ACCESS -DPXX1=YES -DUI_COMPANION=YES` |  |
+| RadioMaster Boxer | `-DPCB=X7 -DPCBREV=BOXER -DUI_COMPANION=YES` |  |
+| RadioMaster GX12 | `-DPCB=X7 -DPCBREV=GX12 -DUI_COMPANION=YES` |  |
+| RadioMaster MT12 | `-DPCB=X7 -DPCBREV=MT12 -DUI_COMPANION=YES` |  |
+| RadioMaster TX12 | `-DPCB=X7 -DPCBREV=TX12 -DUI_COMPANION=YES` |  |
+| RadioMaster TX12 MKII | `-DPCB=X7 -DPCBREV=TX12MK2 -DUI_COMPANION=YES` |  |
+| RadioMaster T8 Pro / T8 Lite | `-DPCB=X7 -DPCBREV=T8 -DUI_COMPANION=YES` |  |
+| Jumper T12 / T12 Pro | `-DPCB=X7 -DPCBREV=T12 -DINTERNAL_MODULE_MULTI=ON -DUI_COMPANION=YES` |  |
+| Jumper T12 MAX | `-DPCB=X7 -DPCBREV=T12MAX -DUI_COMPANION=YES` |  |
+| Jumper T14 | `-DPCB=X7 -DPCBREV=T14 -DUI_COMPANION=YES` |  |
+| Jumper T20 | `-DPCB=X7 -DPCBREV=T20 -DUI_COMPANION=YES` |  |
+| Jumper T20 V2 | `-DPCB=X7 -DPCBREV=T20V2 -DUI_COMPANION=YES` |  |
+| Jumper T-Lite (v1) | `-DPCB=X7 -DPCBREV=TLITE -DUI_COMPANION=YES` |  |
+| Jumper T-Pro (v1) | `-DPCB=X7 -DPCBREV=TPRO -DUI_COMPANION=YES` |  |
+| Jumper T-Pro V2 | `-DPCB=X7 -DPCBREV=TPROV2 -DUI_COMPANION=YES` |  |
+| Jumper T-Pro S | `-DPCB=X7 -DPCBREV=TPROS -DUI_COMPANION=YES` |  |
+| Jumper Bumblebee | `-DPCB=X7 -DPCBREV=BUMBLEBEE -DUI_COMPANION=YES` |  |
+| BETAFPV LiteRadio 3 Pro | `-DPCB=X7 -DPCBREV=LR3PRO -DUI_COMPANION=YES` |  |
+| iFlight Commando 8 | `-DPCB=X7 -DPCBREV=COMMANDO8 -DUI_COMPANION=YES` |  |
+| HelloRadioSky V14 | `-DPCB=X7 -DPCBREV=V14 -DUI_COMPANION=YES` |  |
+| HelloRadioSky V14 LCD | `-DPCB=X7 -DPCBREV=V14LCD -DUI_COMPANION=YES` |  |
+| FrSky Taranis X9 Lite | `-DPCB=X9LITE -DUI_COMPANION=YES` |  |
+| FrSky Taranis X9 Lite S | `-DPCB=X9LITES -DUI_COMPANION=YES` |  |
+| FrSky Taranis X-Lite | `-DPCB=XLITE -DUI_COMPANION=YES` |  |
+| FrSky Taranis X-Lite S / Pro | `-DPCB=XLITES -DUI_COMPANION=YES` |  |
+| FrSky Taranis X9D | `-DPCB=X9D -DUI_COMPANION=YES` |  |
+| FrSky Taranis X9D Plus | `-DPCB=X9D+ -DUI_COMPANION=YES` |  |
+| FrSky Taranis X9D Plus 2019 | `-DPCB=X9D+ -DPCBREV=2019 -DUSE_FW_LTO=y -DUI_COMPANION=YES` |  |
+| FrSky Taranis X9E | `-DPCB=X9E -DUI_COMPANION=YES` |  |
+| FrSky Horus X10 / X10S | `-DPCB=X10` |  |
+| FrSky Horus X10 / X10S Express | `-DPCB=X10 -DPCBREV=EXPRESS -DPXX1=YES` |  |
+| FrSky Horus X12S | `-DPCB=X12S` |  |
+| Jumper T15 | `-DPCB=X10 -DPCBREV=T15 -DINTERNAL_MODULE_CRSF=ON` |  |
+| Jumper T16 | `-DPCB=X10 -DPCBREV=T16 -DINTERNAL_MODULE_MULTI=ON` |  |
+| Jumper T18 | `-DPCB=X10 -DPCBREV=T18` |  |
+| Fatfish F16 | `-DPCB=X10 -DPCBREV=F16` |  |
+| HelloRadioSky V16 | `-DPCB=X10 -DPCBREV=V16` |  |
+| FlySky Nirvana NV14 | `-DPCB=PL18 -DPCBREV=NV14` |  |
+| FlySky Elysium EL18 | `-DPCB=PL18 -DPCBREV=EL18` |  |
+| FlySky Paladin PL18 | `-DPCB=PL18` |  |
+| FlySky Paladin PL18EV | `-DPCB=PL18 -DPCBREV=PL18EV` |  |
+| FlySky Paladin PL18U | `-DPCB=PL18 -DPCBREV=PL18U` |  |
+| FlySky Noble NB4+ | `-DPCB=PL18 -DPCBREV=NB4P` |  |
+| RadioMaster TX15 | `-DPCB=TX15` |  |
+| RadioMaster GX15 | `-DPCB=GX15` |  |
+| RadioMaster TX16S MK3 | `-DPCB=TX16SMK3` |  |
+| Jumper T15 Pro | `-DPCB=T15PRO` |  |
+| Jumper T22 | `-DPCB=T22` |  |
+| HelloRadioSky V12 | `-DPCB=V12` |  |
+| FlySky ST16 | `-DPCB=ST16` |  |
+| FlySky PA01 | `-DPCB=PA01` |  |
+| iFlight Commando 14 | `-DPCB=C14` |  |
 
-Always append **`-DUSB_COMPANION=ON`**. Without it you get stock EdgeTX, byte-for-byte identical to upstream, which is
-a good way to check your toolchain first.
-
-**Companion build** (branch `ultraedge-beta` only): add **`-DUI_COMPANION=YES`** to remove the radio's own model and
-radio-settings menus. The beta uses it for black-and-white radios to free flash; those settings are then made in the
-app. The per-radio build flags for the 56 beta radios are the TARGETS table in `firmware/v4/build-fw.sh` in the
-UltraEdge monorepo (not yet public); they will be published with the next beta.
+Without **`-DUSB_COMPANION=ON`** you get stock EdgeTX, byte-for-byte identical to upstream, which is a good way to
+check your toolchain first.
 
 Full EdgeTX board/flag reference: <https://github.com/EdgeTX/edgetx/blob/main/docs/building/compilation-options.md>.
 

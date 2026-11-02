@@ -1,9 +1,12 @@
 # Flashing UltraEdge firmware v1.2.0
 
 v1.2.0 is the firmware for both the production app (**UltraEdge 1.6.2**, Google Play) and the beta (**1.6.3**, open
-testing), for every EdgeTX radio we build. Four are hardware-tested: RadioMaster Pocket, Zorro and TX16S, and FrSky
-QX7. The other 52 are built, not hardware-tested (see *Status* below). Back up your SD card and your current firmware
-first, and bench-test with the propeller off.
+testing). Four radios are hardware-tested; the other 52 are built, not hardware-tested (see
+[`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md)). Back up your SD card and your current firmware first, and bench-test
+with the propeller off.
+
+**Known issue:** the QX7 and other STM32F2 radios (X9D, X9D+, X9 Lite, T12, TX12, T8 and similar) don't identify
+themselves to the app on v1.2.0, so My Radios and per-radio lists use one shared set for them. Fixed in v1.2.1.
 
 **Companion** builds (every black-and-white screen) remove the radio's own model and radio-settings
 menus; you change those in the app. **Full** builds (every colour screen) keep every EdgeTX menu. Want the radio's own menus on a

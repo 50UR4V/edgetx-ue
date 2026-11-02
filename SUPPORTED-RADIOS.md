@@ -4,10 +4,11 @@
 it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
 that it works on the real radio.
 
-Firmware **v1.2.0** for Pocket, Zorro, TX16S and QX7 (app **1.6.0**, or **1.6.1 beta**); every other radio: **1.1.22
-(beta)**, app 1.4.3 or newer. EdgeTX base `90bbce17`.
+Firmware **v1.2.0** for every radio below (app **1.6.2**, or **1.6.3 beta**). EdgeTX base `90bbce17`.
 
-Hardware-verified on v1.2.0 by the owner on 2026-11-01: Pocket, Zorro and QX7 (companion) and TX16S (full).
+Hardware-verified on v1.2.0 by the owner on 2026-11-01: Pocket, Zorro and QX7 (companion) and TX16S (full). The
+other 52 are built, not hardware-tested yet. A radio is marked verified when we, a tester or the community run the
+checklist below on the real radio.
 
 ## Status key
 
@@ -51,7 +52,7 @@ Hardware-verified on v1.2.0 by the owner on 2026-11-01: Pocket, Zorro and QX7 (c
 | FrSky Tandem X20 / X20S / X20 HD (Horus X20 family) | — | Colour | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
 | FrSky Twin X14 / X14S / X14RS | — | Colour | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
 | FrSky Twin X-Lite / X-Lite S / X-Lite RII | — | Colour | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
-| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.2.0 companion build, 2026-11-01 |
+| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | ✅ Verified (owner) on v1.2.0 companion build, 2026-11-01 (see Known issue) |
 | FrSky Taranis Q X7 ACCESS | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | FrSky Taranis X-Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
 | FrSky Taranis X-Lite S / Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | 🔨 Built, not yet verified |
@@ -104,6 +105,10 @@ Notes:
 - Radios that EdgeTX added after our base (`90bbce17`) aren't listed yet. They arrive when UltraEdge moves to a newer
   EdgeTX.
 
+**Known issue:** the QX7 and other STM32F2 radios (MCU column `F205xE`: X9D, X9D Plus, X9 Lite, T12, TX12, T8 and
+others) don't identify themselves to the app on v1.2.0, so My Radios and per-radio lists use one shared set for them.
+Fixed in firmware v1.2.1.
+
 ## Help verify your radio
 
 If your radio says **🔨 Built, not yet verified**, you can move it to ✅ in about 20 minutes.
@@ -113,19 +118,19 @@ Companion build the radio's own menus are gone; to get them back, flash stock Ed
 
 1. **Flash** the file for your radio from the firmware release (EdgeTX Buddy, or the bootloader). Flashing guide:
    `FLASHING.md` on the release.
-2. **Version page:** the radio shows `ultraedge-<your radio>` and `UE 1.1.22`. On a Companion build, open any menu:
+2. **Version page:** the radio shows `ultraedge-<your radio>` and `UE 1.2.0`. On a Companion build, open any menu:
    the "settings are in the UltraEdge app" screen shows the same version, git and date.
 3. **Connect the app:** plug the phone in by USB and open UltraEdge. It connects and shows live channels.
 4. **Edit and save a model:** change something small (a mix weight or a model name), save, and check it on the
    radio. Then change it back.
 5. **Telemetry:** with a receiver bound, the app's telemetry screen shows live values (RSSI, voltage).
-6. **Calibration:** run the app's calibration wizard (System › Calibration). Sticks and pots read correctly after.
+6. **Calibration:** run the app's calibration wizard (System › Hardware › Calibration). Sticks and pots read correctly after.
 
 **Report it:** open a GitHub issue at **[50UR4V/UltraEdge-app](https://github.com/50UR4V/UltraEdge-app/issues)**
 titled `Verified: <radio name>` (or `Problem: <radio name>`). Paste:
 - the full contents of the `.txt` file that sits next to the firmware you flashed (it holds FW, VERS, GIT#, DATE and
   the SHA-256),
 - which of steps 1–6 passed, and anything that didn't,
-- your app version (About screen) and phone model.
+- your app version (System › About and licences) and phone model.
 
 Tell us how you'd like to be credited (name or handle). We update this table when a report comes in.

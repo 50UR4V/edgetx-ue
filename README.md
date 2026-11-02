@@ -23,11 +23,11 @@ Get the `.bin` (or `.uf2` for H750 radios) for your radio from **[Releases](../.
 companion builds, RadioMaster TX16S as a full build, hardware-verified 2026-11-01; for app 1.6.2 on Google Play and
 1.6.3 on Play open testing. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to keep the radio's own
 menus. v1.2.0 also has files for the other 52 EdgeTX radios (companion build on black-and-white radios, full build
-on colour radios): built, not hardware-tested yet. Which to pick:
+on colour radios): built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
 [User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
 
-A radio is marked **Verified** only after the checklist in `SUPPORTED-RADIOS.md` has passed on real hardware. Every
-other build is compiled and identity-checked, but not yet flown. If you fly one, please report how it went.
+**Known issue:** the QX7 and other STM32F2 radios (X9D, X9D+, X9 Lite, T12, TX12, T8 and similar) don't identify
+themselves to the app on v1.2.0, so My Radios and per-radio lists use one shared set for them. Fixed in v1.2.1.
 
 ## Get the app
 - **UltraEdge for EdgeTX RC Radios** (Google Play): https://play.google.com/store/apps/details?id=com.ultraedge.companion
