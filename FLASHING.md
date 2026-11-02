@@ -1,6 +1,6 @@
 # Flashing UltraEdge firmware v1.2.0
 
-v1.2.0 is the firmware for both the production app (**UltraEdge 1.6.0**, Google Play) and the beta (**1.6.1**, open
+v1.2.0 is the firmware for both the production app (**UltraEdge 1.6.2**, Google Play) and the beta (**1.6.3**, open
 testing), for every EdgeTX radio we build. Four are hardware-tested: RadioMaster Pocket, Zorro and TX16S, and FrSky
 QX7. The other 52 are built, not hardware-tested (see *Status* below). Back up your SD card and your current firmware
 first, and bench-test with the propeller off.
