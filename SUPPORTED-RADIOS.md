@@ -4,7 +4,7 @@
 it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
 that it works on the real radio.
 
-Firmware **v1.2.0** for every radio below (app **1.6.0**, or **1.6.1 beta**). EdgeTX base `90bbce17`.
+Firmware **v1.2.0** for every radio below (app **1.6.2**, or **1.6.3 beta**). EdgeTX base `90bbce17`.
 
 Hardware-verified on v1.2.0 by the owner on 2026-11-01: Pocket, Zorro and QX7 (companion) and TX16S (full).
 
