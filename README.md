@@ -31,6 +31,7 @@ themselves to the app on v1.2.0, so My Radios and per-radio lists use one shared
 
 ## Get the app
 - **UltraEdge for EdgeTX RC Radios** (Google Play): https://play.google.com/store/apps/details?id=com.ultraedge.companion
+- **iPhone:** in development; [sponsor the testing](https://github.com/sponsors/50UR4V) to get it to the App Store (planned February 2027, tentative).
 - Manual, downloads (sound packs, Lua scripts) and support: https://github.com/50UR4V/UltraEdge-app
 - UE Protocol (the open radio↔phone link): https://github.com/50UR4V/ue-protocol
 
