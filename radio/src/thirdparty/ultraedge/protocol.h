@@ -128,7 +128,22 @@ enum MsgType : uint8_t {
   MSG_SD_LIST_NEWEST_RESP = 0x49, // radio->phone: {u8 count, u8 flags(b0=more), [u32 size, u32 ts, u8 nl, name]}
   MSG_GET_RADIO_INFO      = 0x4A, // phone->radio: {} request this radio's identity + SF catalog (ADR-0033, s30)
   MSG_GF_SET              = 0x4C, // phone->radio: {u8 index, yaml "customFn:\n  <index>:\n    ..."} one global function (ADR-0038, s36)
+  MSG_SF_SET      = 0x4E, // s55 (ADR-0059) phone->radio: {u8 index, i16 swRaw(0x7FFF keep), i16 srcRaw(0x7FFF keep), yaml "customFn:\n  <index>:\n    ..."}
+                          //   one MODEL special function through EdgeTX's own YAML parser (as MSG_GF_SET does for global ones)
   MSG_MOD_STATE   = 0x4D, // s45 (ADR-0048) radio->phone: NUM_MODULES x {u8 mode 0 normal/1 bind/2 range, u8 flags b0 telemetry streaming b1 MULTI bind finished b2 beeping, u8 caps b0 bind b1 range}
+  // s54 (ADR-0059): the app's file manager on the radio's SD. Lists folders AND files; writes go through MODEL_PUSH_*
+  // with kind BULK_SD_FILE (the same windowed, CRC-checked, temp-then-rename path as a model save); delete/mkdir answer
+  // ACK/NACK. Writes only under /SOUNDS/ /SCRIPTS/ /WIDGETS/ /IMAGES/ /THEMES/ /LOGS/ (never MODELS/ or RADIO/, never onto a
+  // folder's name, never a dot name); writes are ATTACHED-gated, listing is read-only and is not. A file a Lua script holds
+  // open for writing is not known to the radio (FatFs has no locking here): don't change files a running script writes.
+  MSG_SD_DIR       = 0x56, // phone->radio: {u8 pathLen, path, u16 start} one page of a folder, entries in folder order
+  MSG_SD_DIR_RESP  = 0x57, // radio->phone: {u8 reqSeq, u8 count, u8 flags(b0 more, b1 no such folder), u16 next, [u8 attr(b0 dir, b1 name cut), u32 size, u8 nl, name]}
+  MSG_SD_DELETE    = 0x59, // phone->radio: {u8 pathLen, path} delete a file or an EMPTY folder -> ACK / NACK
+  MSG_SD_MKDIR     = 0x5A, // phone->radio: {u8 pathLen, path} make a folder -> ACK / NACK
+  // s56 (ADR-0059): the radio's own hardware names for the app's source/switch pickers — what EdgeTX's menus show
+  MSG_GET_HW       = 0x5B, // phone->radio: {} request the switch and analog list
+  MSG_HW           = 0x5C, // radio->phone: {u8 reqSeq, u16 firstMultiposSwsrc, u8 nSw, [u8 idx, u8 type(SwitchConfig), u8 nl, name],
+                           //   u8 nAn, [u8 kind(0 stick, 1 flex), u8 idx, u8 type(FlexAnalogConfig; 0xFF for sticks), u8 nl, label]}
   MSG_MODEL_CHANGED = 0x55, // s50 (ADR-0053) radio->phone: {u8 nameLen, filename} the active model changed (radio menu, Lua, app select/new)
   MSG_RADIO_INFO          = 0x4B, // radio->phone: {u8 ver=2, u8 uidLen, uid[], u8 n, [u8 func, u8 nl, yamlName], v2: u8 nf, [u8 len, str] (fw, ueVer, ueGit, ueDate, edgetxVer, edgetxGit; s38)}
   MSG_TELECAT     = 0x3D, // radio->phone. V2: {u8 count, [u16 id, u8 value_kind, u8 unit, u8 prec,
@@ -180,6 +195,7 @@ enum BulkKind : uint8_t {
   BULK_BITMAP     = 3,   // model image (future)
   BULK_LOG        = 4,   // SD log (future)
   BULK_MODEL_NEW  = 5,   // ADR-0027: MODEL_PUSH restores a NEW model file (not the active-model overwrite)
+  BULK_SD_FILE    = 6,   // s54 (ADR-0059): MODEL_PUSH writes any file in a writable SD folder; BEGIN's name = the full path
 };
 
 // ---- MSG_AUDIO payload kinds (P2 unified audio, docs/ARCH §4) ---------------
@@ -431,7 +447,7 @@ enum RefDomain : uint8_t { DOM_SOURCE = 1, DOM_SWITCH = 2, DOM_CURVE = 3 };
 // always refers to a real line (EdgeTX-like), and the ACK re-describes.
 enum ListOp : uint8_t {
   LIST_INSERT = 0,        // = INSERT_BEFORE (kept as 0 for back-compat)
-  LIST_APPEND = 1,
+  LIST_APPEND = 1,        // mixes/inputs: arg 0 = on the channel after the last line's; arg n (s57, CAP_LIST_ON_CH) = on channel n-1
   LIST_DELETE = 2,
   LIST_INSERT_AFTER = 3,
 };
@@ -543,6 +559,9 @@ enum NackReason : uint8_t {
   NACK_NOT_FOUND  = 11,   // named model file not found on the radio
   NACK_ACTIVE     = 12,   // refused: that's the active model (can't delete the one in use)
   NACK_UNSUPPORTED = 13,  // s45 (ADR-0048): this module type can't do that (e.g. range check on CRSF)
+  NACK_SD_PATH    = 14,   // s54: that SD path may not be written (outside SOUNDS/SCRIPTS/WIDGETS/IMAGES/THEMES/LOGS, a
+                          //   folder root, "..", or the flight log being recorded)
+  NACK_SD_NOT_EMPTY = 15, // s54: the folder still has files in it
 };
 
 // ---- Roles & capability bits ------------------------------------------------
@@ -564,6 +583,11 @@ enum Caps : uint32_t {
   CAP_CALIB        = 1u << 10, // Set 4: MSG_CAL drives EdgeTX's stick/pot calibration from the phone
   CAP_PUSH_ACK     = 1u << 11, // ADR-0032 (s29): model-push DATA chunks are ACKed one by one (stop-and-wait)
   CAP_MODEL_EVENTS = 1u << 12, // s50 (ADR-0053): MSG_MODEL_CHANGED announces every change of the active model
+  CAP_PUSH_WINDOW  = 1u << 13, // s53 (ADR-0058): 2 KB RX ring + one cumulative push ACK per tick — the phone may keep 1.5 KB in flight
+  CAP_SF_SET       = 1u << 15, // s55 (ADR-0059): MSG_SF_SET sets one model special function (~40 B instead of the whole model file)
+  CAP_HW_NAMES     = 1u << 16, // s56 (ADR-0059): MSG_GET_HW answers with the radio's switches (name, 2/3-pos) and sticks/pots/sliders/6-pos
+  CAP_LIST_ON_CH   = 1u << 17, // s57: MSG_LIST_OP APPEND on mixes/inputs with arg = channel/input + 1 adds the line on that one, at EdgeTX's place
+  CAP_SD_FILES     = 1u << 14, // s54 (ADR-0059): MSG_SD_DIR / SD_DELETE / SD_MKDIR + MODEL_PUSH kind BULK_SD_FILE
 };
 
 // ---- Link state machine -----------------------------------------------------

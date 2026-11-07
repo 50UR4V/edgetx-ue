@@ -4,9 +4,26 @@
   "repo": "50UR4V/edgetx-ue",
   "versions": [
     {
-      "id": "1.2.0",
+      "id": "1.2.1",
       "channel": "production",
       "status": "current",
+      "tag": "v1.2.1",
+      "edgetx": {
+        "label": "3.0-dev (main, 2026-08-29)",
+        "commit": "90bbce1763ac086ab572882a0e2e8ae17b2ffa3b"
+      },
+      "app": "1.6.4 (Play production) / 1.6.5 (open testing)",
+      "proto": 4,
+      "radios": "*",
+      "ui_companion": [
+        "128x64",
+        "212x64"
+      ]
+    },
+    {
+      "id": "1.2.0",
+      "channel": "production",
+      "status": "retired",
       "tag": "v1.2.0",
       "edgetx": {
         "label": "3.0-dev (main, 2026-08-29)",
