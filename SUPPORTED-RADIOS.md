@@ -4,7 +4,9 @@
 it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
 that it works on the real radio.
 
-Firmware **v1.2.1** for every radio below (app **1.6.4**, or **1.6.5 beta**). EdgeTX base `90bbce17`.
+Firmware **v1.2.1** for every radio below (app **1.6.4**, or **1.6.5 beta**). It is built on **EdgeTX 3.0-dev** (base
+`90bbce17`), not EdgeTX 2.x: back up your SD card before you flash, and restore it if you go back to stock EdgeTX 2.x.
+Want another language or build option? Build your own file with the [firmware builder](https://github.com/50UR4V/ultraedge-firmware-builder).
 
 Hardware-verified on v1.2.1 by the owner: TX16S (full) on 2026-11-07; Pocket, Zorro and QX7 (companion) on 2026-11-08. The
 other 52 are built, not hardware-tested yet. A radio is marked verified when we, a tester or the community run the
@@ -17,7 +19,7 @@ checklist below on the real radio.
 | ✅ Verified (owner) | The UltraEdge team ran the full checklist below on this radio. |
 | ✅ Verified (tester: name) | A beta tester ran the checklist and reported it. |
 | ✅ Verified (community: link) | Someone reported a passing checklist in a public GitHub issue. |
-| 🔨 Built, not yet verified | Firmware builds and passes our build checks, but nobody has run it on this radio yet. **Help us verify it.** |
+| 🔨 Built, not yet verified | Firmware builds and passes our build checks, but nobody has run it on this radio yet (the firmware builder calls this *community-unverified*). **Help us verify it.** |
 | ❌ Not supported yet (reason) | No working build yet, and why. |
 
 **Build** says which firmware you get:
