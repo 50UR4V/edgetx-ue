@@ -1578,6 +1578,10 @@ void edgeTxInit()
   storageReadAll();
 #endif
 
+#if defined(USB_COMPANION)
+  { extern void ueXposDefaultsAtBoot(); ueXposDefaultsAtBoot(); }   // s58: a 6-pos a settings reset left uncalibrated gets the board's default steps
+#endif
+
   initSerialPorts();
 
 #if defined(AUDIO)

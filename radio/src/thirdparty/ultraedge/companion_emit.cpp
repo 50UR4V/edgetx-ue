@@ -60,6 +60,7 @@
 #include "storage/yaml/yaml_parser.h"
 #include "storage/yaml/yaml_datastructs.h"
 #include "protocol.h"
+extern FIL g_oLogFile;              // s54: logs.cpp — the flight log being recorded must not be overwritten/deleted
 #include "stamp.h"                  // s38: VERSION / GIT_STR — the EdgeTX base, for MSG_RADIO_INFO v2
 #include "ue_version.h"             // s38: UE_FW_VERSION / UE_GIT / UE_BUILD_DATE / UE_BUILD_TIME (build-fw.sh)
 #if defined(UI_COMPANION)
@@ -111,6 +112,8 @@ extern "C" void ueCrumbFlush() {   // called from perMain() — MAIN task, SD-sa
 #endif
 
 extern void mixerTaskStop();
+extern void mixerTaskLock();     // s55: hold the mixer while a special function entry is rewritten
+extern void mixerTaskUnlock();
 extern void mixerTaskStart();
 extern uint8_t getCurvePoints(uint8_t index);   // curves.cpp (no header decl); docs/13
 
@@ -444,9 +447,13 @@ static uint8_t sfSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t len){ uin
     case SF_SWITCH:if(t!=T_I16||len!=2)return NACK_BAD_TYPE; c->swtch=rdI16(d); storageDirty(EE_MODEL); return 0;
     case SF_FUNC:  return NACK_UNKNOWN_FIELD;   // s25: retired — left `active` stale on a function change (model file now)
     case SF_REPEAT:if(t!=T_I16||len!=2)return NACK_BAD_TYPE; c->repeat=(int8_t)rdI16(d); storageDirty(EE_MODEL); return 0;
-    case SF_ENABLE:if(t!=T_BOOL||len!=1)return NACK_BAD_TYPE; c->active=d[0]?1:0; storageDirty(EE_MODEL); return 0;
+    case SF_ENABLE:if(t!=T_BOOL||len!=1)return NACK_BAD_TYPE; c->active=d[0]?1:0; storageDirty(EE_MODEL);
+      if(CFN_FUNC(c)==FUNC_PLAY_SCRIPT||CFN_FUNC(c)==FUNC_RGB_LED) LUA_LOAD_MODEL_SCRIPTS();   // s55: as EdgeTX's SF menu
+      return 0;
     case SF_PARAM:
-      if(k==SFP_FILE){ return setStrField(c->play.name,sizeof(c->play.name),t,d,len); }
+      if(k==SFP_FILE){ uint8_t r=setStrField(c->play.name,sizeof(c->play.name),t,d,len);
+        if(r==0 && (CFN_FUNC(c)==FUNC_PLAY_SCRIPT||CFN_FUNC(c)==FUNC_RGB_LED)) LUA_LOAD_MODEL_SCRIPTS();   // s55: the new script runs
+        return r; }
       if(k==SFP_SOUND||k==SFP_RESET||k==SFP_MODULE){ if(t!=T_ENUM||len!=1)return NACK_BAD_TYPE; c->all.val=d[0]; storageDirty(EE_MODEL); return 0; }
       if(k==SFP_NONE) return NACK_UNKNOWN_FIELD;
       if(t!=T_I16||len!=2)return NACK_BAD_TYPE; c->all.val=rdI16(d); storageDirty(EE_MODEL); return 0;
@@ -1522,7 +1529,9 @@ static bool writeIsStructural(uint16_t id) {
 }
 
 // ---- ISR->main receive ring (SPSC, lock-free) ------------------------------
-static const uint16_t RX_RING = 256;
+// s53 (ADR-0058): 2 KB, not 256 B. The companion only runs once per perMain (50 ms), so the ring is what the phone may
+// send per tick: a 1.5 KB model-push window + 512 B for every other frame. Was one 112-B chunk per tick (12 KB = 5.6 s).
+static const uint16_t RX_RING = 2048;
 static volatile uint8_t  s_rx[RX_RING];
 static volatile uint16_t s_rxHead = 0;   // written by ISR (producer)
 static volatile uint16_t s_rxTail = 0;   // read by main (consumer)
@@ -1542,7 +1551,12 @@ static volatile bool s_companionActive = false;            // set true once HELL
 // emit is gated on the INTERSECTION of what this build supports and what the app advertised, so a
 // v3 (no-caps) app still gets the legacy wire. This build's own advertised caps:
 static const uint32_t UE_LOCAL_CAPS = CAP_STRUCTURED | CAP_AUDIO | CAP_TELEM_TYPED | CAP_MODEL_FILE | CAP_CALIB | CAP_PUSH_ACK
-                                     | CAP_MODEL_EVENTS;   // s50
+                                     | CAP_MODEL_EVENTS    // s50
+                                     | CAP_SD_FILES        // s54
+                                     | CAP_SF_SET          // s55
+                                     | CAP_HW_NAMES        // s56
+                                     | CAP_LIST_ON_CH      // s57
+                                     | CAP_PUSH_WINDOW;    // s53
 
 static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len);   // fwd decl (defined below) — for ueCalTick
 
@@ -1567,6 +1581,29 @@ static void ueCalHandle(uint8_t op) {
     case 3: s_calMoving = false; s_calActive = false; memcpy(g_eeGeneral.calib, s_calSnapshot, sizeof(s_calSnapshot)); break;  // CANCEL
     default: break;
   }
+}
+// s58 (owner 2026-11-07, docs/analysis/CALIBRATION-PARITY-2026-11-07.md): a settings reset leaves a 6-pos switch
+// uncalibrated (adcCalibDefaults writes mid = 1023 into its slot, so its step count byte is 0xFF) and the radio never
+// reads its position until a calibration is stored: stock repairs it in that Store (disableUncalibratedXPots). At boot,
+// give such a 6-pos the board's default steps the same way, only on boards that define XPOS_CALIB_DEFAULT (TX16S, F16,
+// V16, Boxer); the pot type is never changed, boards without defaults stay as stock. Saved once (then it is calibrated);
+// the calibration checksum covers the sticks only, so "calibration needed" is unchanged.
+void ueXposDefaultsAtBoot()
+{
+#if defined(XPOS_CALIB_DEFAULT)
+  bool changed = false;
+  const uint8_t off = adcGetInputOffset(ADC_INPUT_FLEX), n = adcGetMaxInputs(ADC_INPUT_FLEX);
+  for (uint8_t i = 0; i < n; i++) {
+    if (!IS_POT_MULTIPOS(i)) continue;
+    StepsCalibData* calib = (StepsCalibData*)&g_eeGeneral.calib[i + off];
+    if (IS_MULTIPOS_CALIBRATED(calib)) continue;
+    size_t index = 0;
+    calib->count = XPOTS_MULTIPOS_COUNT - 1;
+    for (const auto& value : XPOS_CALIB_DEFAULT) calib->steps[index++] = value;
+    changed = true;
+  }
+  if (changed) storageDirty(EE_GENERAL);
+#endif
 }
 static void ueCalTick() {   // called every 10ms while the companion link is active
   if (!s_calActive) return;
@@ -1711,6 +1748,44 @@ static uint32_t s_pushOffset = 0, s_pushTotal = 0;
 static uint16_t s_pushCrc = 0xFFFF, s_pushExpCrc = 0;
 static char     s_pushFn[LEN_MODEL_FILENAME + 1];
 static bool     s_pushIsNew = false;   // ADR-0027: restore (write a NEW model) vs active-model save
+// s54 (ADR-0059): a push of any SD file (kind BULK_SD_FILE): its full path, and a temp file in the same folder.
+static bool     s_pushIsFile = false;
+static char     s_pushPath[80];
+
+// s54: the folders the app may write in. Never MODELS/ or RADIO/ (radio-owned: models change only through the model save
+// above, radio settings only through typed writes), never a root itself, no "..", no backslash or drive letters.
+static bool ueSdWritable(const char* p) {
+  static const char* const ROOTS[] = { "/SOUNDS/", "/SCRIPTS/", "/WIDGETS/", "/IMAGES/", "/THEMES/", "/LOGS/" };
+  if (!p || p[0] != '/' || strstr(p, "..") || strchr(p, '\\') || strchr(p, ':') || strstr(p, "//")) return false;
+  size_t n = strlen(p); if (n < 2 || p[n - 1] == '/') return false;
+  const char* base = strrchr(p, '/'); if (base && base[1] == '.') return false;   // our temp/backup names, "." and ".."
+  for (const char* r : ROOTS) {
+    size_t k = strlen(r); bool eq = n > k;
+    for (size_t i = 0; eq && i < k; ++i) { char a = p[i], b = r[i]; if (a >= 'a' && a <= 'z') a -= 32; if (a != b) eq = false; }
+    if (eq) {
+      // the flight log EdgeTX is writing right now must not be replaced or deleted (FatFs has no file locking here)
+      if (r == ROOTS[5] && g_oLogFile.obj.fs) return false;
+      return true;
+    }
+  }
+  return false;
+}
+// s54: true if [p] exists and is a folder (a file write must never land on a folder's name: f_rename moves folders too)
+static bool ueIsDir(const char* p) { FILINFO fi; return f_stat(p, &fi) == FR_OK && (fi.fattrib & AM_DIR); }
+// "<folder of s_pushPath>/.uepush.tmp"
+static void ueFileTmpPath(char* out, size_t cap) {
+  const char* slash = strrchr(s_pushPath, '/'); size_t d = slash ? (size_t)(slash - s_pushPath) : 0;
+  if (d + 13 >= cap) d = 0;
+  memcpy(out, s_pushPath, d); strcpy(out + d, "/.uepush.tmp");
+}
+// {u8 pathLen, path} at payload[off] -> NUL-terminated buf; returns the length, or -1 when missing / too long.
+static int ueReadPath(const Message& m, uint16_t off, char* buf, uint8_t cap) {
+  if ((uint32_t)off + 1 > m.len) return -1;
+  uint8_t pl = m.payload[off];
+  if (pl == 0 || pl >= cap || (uint32_t)off + 1 + pl > m.len) return -1;
+  for (uint8_t i = 0; i < pl; ++i) { char c = (char)m.payload[off + 1 + i]; if (c == 0) return -1; buf[i] = c; }
+  buf[pl] = 0; return pl;
+}
 
 #if !defined(STORAGE_MODELSLIST)
 static int ueModelIdxFromName(const char* fn);   // defined with the mono model-ops below
@@ -1725,6 +1800,7 @@ static void ueModelPushAck(uint16_t xfer, uint8_t status) {
 // ADR-0032 (s29): per-chunk DATA ACK {u16 xfer, u8 status=0, u8 0xDA, u32 bytesWritten}. The phone sends the next
 // chunk only after this, so the 256-B RX ring can never overflow (it did whenever an SD write stalled the task →
 // "push out of sequence"). 0xDA can't be a restore-ACK filename length (<= LEN_MODEL_FILENAME).
+static bool s_pushAckDue = false;   // s53: a DATA ACK is owed at the end of this tick's RX drain
 static void ueModelPushDataAck(uint16_t xfer, uint32_t written) {
   uint8_t p[8] = { (uint8_t)(xfer & 0xFF), (uint8_t)(xfer >> 8), 0, 0xDA,
                    (uint8_t)written, (uint8_t)(written >> 8), (uint8_t)(written >> 16), (uint8_t)(written >> 24) };
@@ -1765,7 +1841,9 @@ static void ueChooseRestoreTarget(const char* reqName, char* out) {
 // Abandon an in-flight push and discard the temp file — the live model is never touched here.
 static void ueModelPushDiscard() {
   if (s_pushActive) { f_close(&s_pushFile); s_pushActive = false; }
-  char tmpPath[64]; getModelPath(tmpPath, UE_PUSH_TMP); f_unlink(tmpPath);
+  char tmpPath[96];
+  if (s_pushIsFile) ueFileTmpPath(tmpPath, sizeof(tmpPath)); else getModelPath(tmpPath, UE_PUSH_TMP);
+  f_unlink(tmpPath);
 }
 
 // Resolve the active model filename (portable across storage backends; mirrors ueStartModelPull).
@@ -1787,8 +1865,22 @@ static void ueModelPushBegin(const Message& m) {
   uint32_t total = (uint32_t)m.payload[3] | ((uint32_t)m.payload[4]<<8) | ((uint32_t)m.payload[5]<<16) | ((uint32_t)m.payload[6]<<24);
   uint16_t expcrc = (uint16_t)(m.payload[7] | (m.payload[8] << 8));
   if (!s_link.companionInputAllowed()) { ueModelPushAck(xfer, NACK_NOT_ATTACHED); return; }
-  if (kind != BULK_MODEL_YAML && kind != BULK_MODEL_NEW) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
+  if (kind != BULK_MODEL_YAML && kind != BULK_MODEL_NEW && kind != BULK_SD_FILE) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
   if (s_pushActive) ueModelPushDiscard();                                                     // supersede
+  if (kind == BULK_SD_FILE) {
+    // s54 (ADR-0059): any file in a writable folder; streamed into "<folder>/.uepush.tmp", swapped in at END.
+    char path[80]; if (ueReadPath(m, 9, path, sizeof(path)) < 0) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
+    if (!ueSdWritable(path) || ueIsDir(path)) { ueModelPushAck(xfer, NACK_SD_PATH); return; }
+    strcpy(s_pushPath, path); s_pushIsFile = true; s_pushIsNew = false;
+    char tmp[96]; ueFileTmpPath(tmp, sizeof(tmp));
+    FRESULT r = f_open(&s_pushFile, tmp, FA_CREATE_ALWAYS | FA_WRITE);
+    if (r != FR_OK) { s_pushIsFile = false; ueModelPushAck(xfer, r == FR_NO_PATH ? NACK_NOT_FOUND : NACK_PUSH_IO); return; }
+    s_pushXferId = xfer; s_pushTotal = total; s_pushExpCrc = expcrc;
+    s_pushOffset = 0; s_pushCrc = 0xFFFF; s_pushActive = true;
+    ueModelPushAck(xfer, 0);
+    return;
+  }
+  s_pushIsFile = false;
   // Read the app-supplied filename (BULK_MODEL_YAML: must equal the active model; BULK_MODEL_NEW: desired slot).
   uint8_t nl = m.payload[9];
   if (nl == 0 || (uint32_t)(10 + nl) > m.len || nl > LEN_MODEL_FILENAME) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
@@ -1825,15 +1917,23 @@ static void ueModelPushData(const Message& m) {
   uint32_t off  = (uint32_t)m.payload[2] | ((uint32_t)m.payload[3]<<8) | ((uint32_t)m.payload[4]<<16) | ((uint32_t)m.payload[5]<<24);
   uint16_t len  = (uint16_t)(m.payload[6] | (m.payload[7] << 8));
   if (!s_pushActive || xfer != s_pushXferId) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
-  // ADR-0032: the phone resent the chunk we already wrote (its ACK was lost) — confirm again, don't write twice.
-  if (len > 0 && off + len == s_pushOffset) { ueModelPushDataAck(xfer, s_pushOffset); return; }
+  // ADR-0032/0058: the phone resent chunks we already wrote (an ACK was lost) — confirm again, don't write twice.
+  if (len > 0 && off + len <= s_pushOffset) { s_pushAckDue = true; return; }
   if (off != s_pushOffset || (uint32_t)(8 + len) > m.len) { ueModelPushDiscard(); ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
   const uint8_t* d = m.payload + 8;
   UINT bw = 0;
   if (f_write(&s_pushFile, d, len, &bw) != FR_OK || bw != len) { ueModelPushDiscard(); ueModelPushAck(xfer, NACK_PUSH_IO); return; }
   s_pushCrc = crc16_update(s_pushCrc, d, len);
   s_pushOffset += len;
-  ueModelPushDataAck(xfer, s_pushOffset);   // ADR-0032: ready for the next chunk
+  s_pushAckDue = true;   // s53: one cumulative ACK after the ring is drained (ueModelPushFlushAck), not one per chunk
+}
+
+// s53 (ADR-0058): called once per tick after the RX drain. A windowed phone lands ~13 chunks per tick; one ACK for all of
+// them keeps the radio's USB TX (512 B on STM32F2 / QX7, shared with telemetry) from filling with ACKs.
+static void ueModelPushFlushAck() {
+  if (!s_pushAckDue) return;
+  s_pushAckDue = false;
+  if (s_pushActive) ueModelPushDataAck(s_pushXferId, s_pushOffset);
 }
 
 static void ueModelPushEnd(const Message& m) {
@@ -1842,11 +1942,35 @@ static void ueModelPushEnd(const Message& m) {
   uint16_t xfer = (uint16_t)(m.payload[0] | (m.payload[1] << 8));
   if (!s_pushActive || xfer != s_pushXferId) { ueModelPushAck(xfer, NACK_PUSH_STATE); return; }
   f_close(&s_pushFile); s_pushActive = false;
+  if (s_pushIsFile) {
+    // s54: verify, then swap: old file -> "<path>.uebak", temp -> path, drop the backup. Any failure restores the old file.
+    s_pushIsFile = false;
+    char tmp[96], bak[88]; ueFileTmpPath(tmp, sizeof(tmp));
+    if (s_pushOffset != s_pushTotal || s_pushCrc != s_pushExpCrc) { f_unlink(tmp); ueModelPushAck(xfer, NACK_PUSH_CRC); return; }
+    // logging started meanwhile, or a folder of that name appeared: never replace a folder
+    if (!ueSdWritable(s_pushPath) || ueIsDir(s_pushPath)) { f_unlink(tmp); ueModelPushAck(xfer, NACK_SD_PATH); return; }
+    strcpy(bak, s_pushPath); strcat(bak, ".uebak");
+    f_unlink(bak);
+    bool had = f_rename(s_pushPath, bak) == FR_OK;
+    if (f_rename(tmp, s_pushPath) != FR_OK) {
+      if (had) f_rename(bak, s_pushPath);
+      f_unlink(tmp); ueModelPushAck(xfer, NACK_PUSH_IO); return;
+    }
+    if (had) f_unlink(bak);
+    ueModelPushAck(xfer, 0);
+    return;
+  }
   char tmpPath[64], livePath[64], bakPath[80], bakfn[LEN_MODEL_FILENAME + 8];
   getModelPath(tmpPath, UE_PUSH_TMP);
   getModelPath(livePath, s_pushFn);
   if (s_pushOffset != s_pushTotal || s_pushCrc != s_pushExpCrc) {   // corrupt/incomplete -> discard, keep original
     f_unlink(tmpPath); ueModelPushAck(xfer, NACK_PUSH_CRC); return;
+  }
+  // s53 (ADR-0058): the pilot may have switched model on the radio while the file streamed in. Swapping and reloading now
+  // would load the old file into the live g_model under the new model's name. Refuse: the live model stays untouched.
+  if (!s_pushIsNew) {
+    char afn[MODELIDX_STRLEN + sizeof(MODEL_FILENAME_SUFFIX) + 2]; const char* cur = ueActiveModelFn(afn);
+    if (!cur || strcmp(cur, s_pushFn) != 0) { f_unlink(tmpPath); ueModelPushAck(xfer, NACK_PUSH_MODEL); return; }
   }
   if (s_pushIsNew) {
     // ADR-0027 restore: temp -> the chosen NEW file, then register WITHOUT activating (no .bak, no reload).
@@ -2013,9 +2137,21 @@ static uint8_t ueModelNew() {
 // the entry as radio.yml spells it ("customFn:\n  <i>:\n    swtch: ...\n    func: ...\n    def: ..."); the entry is
 // cleared first, so an empty body deletes it. Only that entry may appear, and its function must be available as a
 // global function in this build, else the entry is restored and the write refused.
+static uint8_t ueFnApply(bool model, uint8_t idx, int16_t swRaw, int16_t srcRaw, const uint8_t* y, uint16_t n);
+static uint8_t ueFnApplyLocked(bool model, CustomFunctionData* fns, uint8_t idx, const CustomFunctionData& saved,
+                               int16_t swRaw, int16_t srcRaw, uint16_t n);
+static char ueFnBuf[208];   // the entry's YAML, parsed in place
 static uint8_t ueGfApply(uint8_t idx, int16_t swRaw, int16_t srcRaw, const uint8_t* y, uint16_t n) {
+  return ueFnApply(false, idx, swRaw, srcRaw, y, n);
+}
+// s55 (ADR-0059): the same for one MODEL special function (g_model.customFn, the model's YAML nodes): a function-type
+// change is one ~40-byte message instead of the whole model file. The pilot's model file follows at the next flush.
+static uint8_t ueSfApply(uint8_t idx, int16_t swRaw, int16_t srcRaw, const uint8_t* y, uint16_t n) {
+  return ueFnApply(true, idx, swRaw, srcRaw, y, n);
+}
+static uint8_t ueFnApply(bool model, uint8_t idx, int16_t swRaw, int16_t srcRaw, const uint8_t* y, uint16_t n) {
   if (idx >= MAX_SPECIAL_FUNCTIONS || n < 10 || n > 200) return NACK_BAD_LENGTH;
-  static char buf[208];
+  char* const buf = ueFnBuf;
   memcpy(buf, y, n); buf[n] = 0;
   if (strncmp(buf, "customFn:\n", 10) != 0) return NACK_BAD_TYPE;
   char want[8]; char* w = appendStr(want, "  "); w = appendInt(w, idx); *w++ = ':'; *w = 0;
@@ -2026,14 +2162,32 @@ static uint8_t ueGfApply(uint8_t idx, int16_t swRaw, int16_t srcRaw, const uint8
     if (ind == 2 && (strncmp(line, want, strlen(want)) != 0 || L != strlen(want))) return NACK_BAD_TYPE;
     if (!nl) break; line = nl + 1;
   }
-  CustomFunctionData saved = g_eeGeneral.customFn[idx];
+  CustomFunctionData* fns = model ? g_model.customFn : g_eeGeneral.customFn;
+  CustomFunctionData saved = fns[idx];
   if (swRaw != 0x7FFF && (swRaw < SWSRC_FIRST || swRaw > SWSRC_LAST)) return NACK_OUT_OF_RANGE;
-  memset(&g_eeGeneral.customFn[idx], 0, sizeof(CustomFunctionData));
-  if (swRaw == 0) { storageDirty(EE_GENERAL); return 0; }           // no trigger = deleted (EdgeTX lists only triggered ones)
-  YamlTreeWalker tree; tree.reset(get_radiodata_nodes(), (uint8_t*)&g_eeGeneral);
+  // s55: the mixer task evaluates these entries every cycle. The entry is cleared and rebuilt below, so hold the mixer
+  // for that short time: an engaged Override (throttle cut) must never be seen half-written (switch 0 = off).
+  mixerTaskLock();
+  uint8_t r = ueFnApplyLocked(model, fns, idx, saved, swRaw, srcRaw, n);
+  mixerTaskUnlock();
+  if (r) return r;
+  // a Lua function script (Play Script, RGB LED) is loaded with the model's scripts: reload them, as EdgeTX's SF menu does
+  uint8_t fnNow = CFN_FUNC(&fns[idx]);
+  uint8_t fnWas = CFN_FUNC(&saved);
+  if (model && (fnWas == FUNC_PLAY_SCRIPT || fnWas == FUNC_RGB_LED || fnNow == FUNC_PLAY_SCRIPT || fnNow == FUNC_RGB_LED))
+    LUA_LOAD_MODEL_SCRIPTS();
+  return 0;
+}
+static uint8_t ueFnApplyLocked(bool model, CustomFunctionData* fns, uint8_t idx, const CustomFunctionData& saved,
+                               int16_t swRaw, int16_t srcRaw, uint16_t n) {
+  char* const buf = ueFnBuf;
+  memset(&fns[idx], 0, sizeof(CustomFunctionData));
+  if (swRaw == 0) { storageDirty(model ? EE_MODEL : EE_GENERAL); return 0; }           // no trigger = deleted (EdgeTX lists only triggered ones)
+  YamlTreeWalker tree;
+  if (model) tree.reset(get_modeldata_nodes(), (uint8_t*)&g_model); else tree.reset(get_radiodata_nodes(), (uint8_t*)&g_eeGeneral);
   YamlParser yp; yp.init(YamlTreeWalker::get_parser_calls(), &tree); yp.set_eof();
   yp.parse(buf, (unsigned)n);
-  CustomFunctionData* cf = &g_eeGeneral.customFn[idx];
+  CustomFunctionData* cf = &fns[idx];
   // The radio names the references (ADR-0028 split): trigger switch, and the source of Volume/Backlight/Play Value.
   cf->swtch = (swRaw == 0x7FFF) ? saved.swtch : swRaw;
   uint8_t fn = CFN_FUNC(cf);
@@ -2041,8 +2195,8 @@ static uint8_t ueGfApply(uint8_t idx, int16_t swRaw, int16_t srcRaw, const uint8
     if (srcRaw < 0 || srcRaw > MIXSRC_LAST) { *cf = saved; return NACK_OUT_OF_RANGE; }
     CFN_PARAM(cf) = srcRaw;
   }
-  if (cf->swtch && !isAssignableFunctionAvailable(fn, false)) { *cf = saved; return NACK_OUT_OF_RANGE; }
-  storageDirty(EE_GENERAL);
+  if (cf->swtch && !isAssignableFunctionAvailable(fn, model)) { *cf = saved; return NACK_OUT_OF_RANGE; }
+  storageDirty(model ? EE_MODEL : EE_GENERAL);
   return 0;
 }
 
@@ -2224,12 +2378,24 @@ static void emitEsc(uint8_t b) {
   if (b == SOF || b == ESC) { usbSerialPutc(nullptr, ESC); usbSerialPutc(nullptr, (uint8_t)(b ^ ESC_XOR)); }
   else usbSerialPutc(nullptr, b);
 }
+// s51 (v1.2.1): the bytes a frame really takes on the wire (SOF + every escaped header/payload/CRC byte).
+static size_t escLen(const uint8_t* b, size_t n) {
+  size_t w = n;
+  for (size_t i = 0; i < n; ++i) if (b[i] == SOF || b[i] == ESC) ++w;
+  return w;
+}
 static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len)
 {
   if (len > MAX_PAYLOAD || (len && !payload)) return;
-  if (!ueTxRoom(1 + 2 * (HEADER_LEN + len + 2))) return;   // s27: whole frame or nothing (worst case: all escaped)
-  const uint8_t hdr[HEADER_LEN] = { PROTO_VERSION, type, s_seq++, (uint8_t)(len & 0xFF), (uint8_t)(len >> 8) };
+  const uint8_t hdr[HEADER_LEN] = { PROTO_VERSION, type, s_seq, (uint8_t)(len & 0xFF), (uint8_t)(len >> 8) };
   uint16_t crc = crc16_update(crc16_update(0xFFFF, hdr, HEADER_LEN), payload, len);
+  const uint8_t cb[2] = { (uint8_t)(crc & 0xFF), (uint8_t)(crc >> 8) };
+  // s27: whole frame or nothing. s51 (v1.2.1): reserve the frame's EXACT wire length, not the all-escaped worst case
+  // 1+2*(5+len+2). On STM32F2 radios (QX7, X9D/X9D+, X9 Lite, T12, TX12, T8, ...) the CDC TX ring is 512 bytes, so the
+  // worst case refused every reply over 248 payload bytes forever: MSG_RADIO_INFO (~330-420 B, the radio was never
+  // identified), MSG_SD_LIST_NEWEST_RESP pages with long log names. Escapes are rare (SOF/ESC bytes only), so these fit.
+  if (!ueTxRoom(1 + escLen(hdr, HEADER_LEN) + escLen(payload, len) + escLen(cb, 2))) return;
+  s_seq++;
   usbSerialPutc(nullptr, SOF);
   for (uint8_t i = 0; i < HEADER_LEN; ++i) emitEsc(hdr[i]);
   for (uint16_t i = 0; i < len; ++i) emitEsc(payload[i]);
@@ -2373,6 +2539,30 @@ static void arrDelete(void* base, size_t itemSz, uint8_t cap, uint8_t idx) {
   memclear((uint8_t*)base + (size_t)(cap-1)*itemSz, itemSz);
 }
 
+// s57: EdgeTX's own new-input defaults — colorlcd insertExpo(idx, input) (model_inputs.cpp); the 128x64/212x64 GUI's
+// insertExpo(idx) (stdlcd model_inputs.cpp) also steps on to the next source the radio has.
+static void ueInsertExpoLikeEdgeTX(uint8_t at, uint8_t chn) {
+  mixerTaskStop();
+  arrInsert(g_model.expoData, sizeof(ExpoData), MAX_EXPOS, at);
+  ExpoData* e = &g_model.expoData[at];
+#if defined(COLORLCD)
+  if (chn >= adcGetMaxInputs(ADC_INPUT_MAIN)) e->srcRaw = MIXSRC_FIRST_STICK + chn;
+  else e->srcRaw = MIXSRC_FIRST_STICK + inputMappingChannelOrder(chn);
+#else
+  for (int i = chn + 1; i < INPUTSRC_LAST; i++) {
+    if (i > adcGetMaxInputs(ADC_INPUT_MAIN)) e->srcRaw = MIXSRC_FIRST_STICK - 1 + i;
+    else e->srcRaw = MIXSRC_FIRST_STICK + inputMappingChannelOrder(i - 1);
+    if (isSourceAvailable(e->srcRaw)) break;
+  }
+#endif
+  e->curve.type = CURVE_REF_EXPO;
+  e->mode = 3;   // pos+neg
+  e->chn = chn;
+  e->weight = 100;
+  mixerTaskStart();
+  storageDirty(EE_MODEL);
+}
+
 static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg) {
   switch (base) {
     case CFG_MIX_BASE: {
@@ -2383,7 +2573,14 @@ static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg)
       // consistent with "New input". Per-line "Insert after/before" still keep the ref line's channel
       // (add a line within that channel, which mixes legitimately support).
       uint8_t at, ch;
-      if (op == LIST_APPEND) {
+      if (op == LIST_APPEND && arg) {
+        // s57 (owner 2026-11-06, EdgeTX colorlcd ModelMixesPage::newMix): "＋ New mix" offers the channels without mixes;
+        // arg = the chosen channel + 1. The line goes where EdgeTX puts it: after every line of a lower channel.
+        ch = (uint8_t)(arg - 1);
+        if (arg > MAX_OUTPUT_CHANNELS) return NACK_OUT_OF_RANGE;
+        for (at = 0; at < used && g_model.mixData[at].destCh <= ch; at++) {}
+      }
+      else if (op == LIST_APPEND) {
         at = used;
         ch = used ? (uint8_t)(g_model.mixData[used-1].destCh + 1) : 0;
         if (ch >= MAX_OUTPUT_CHANNELS) ch = (uint8_t)(MAX_OUTPUT_CHANNELS - 1);
@@ -2407,6 +2604,14 @@ static uint8_t doListOp(uint16_t base, uint16_t index, uint8_t op, uint16_t arg)
       if (used >= MAX_EXPOS) return NACK_OUT_OF_RANGE;
       // insert on the SAME input channel (chn) as the reference line.
       uint8_t at, chn;
+      if (op == LIST_APPEND && arg) {
+        // s57 (EdgeTX colorlcd ModelInputsPage::newInput): "＋ New input" offers the unused inputs; arg = input + 1.
+        // EdgeTX's insertExpo(index, input) at EdgeTX's place (after every line of a lower input), with its defaults.
+        if (arg > MAX_INPUTS) return NACK_OUT_OF_RANGE;
+        chn = (uint8_t)(arg - 1);
+        for (at = 0; at < used && g_model.expoData[at].chn <= chn; at++) {}
+        ueInsertExpoLikeEdgeTX(at, chn); return 0;
+      }
       // BUG-004: "＋ New input" (APPEND) must create a NEW input — the NEXT channel after the last —
       // not another expo line on the last input (that produced IN6 nesting under IN5). INSERT/
       // INSERT_AFTER (from a line's menu) still keep the ref line's chn = add a line within that input.
@@ -2693,6 +2898,38 @@ static void onFrame(const Message& m, void*)
     for (const Pg& pg : PAGES) { p[o++]=pg.id&0xFF; p[o++]=pg.id>>8; p[o++]=pg.icon; putStr(p, o, pg.title); }
     n = encodeFrame(MSG_CONFIG_PAGES, s_seq++, p, (uint16_t)o, f, sizeof(f)); emitBytes(f, n);
   }
+  else if (m.type == MSG_GET_HW) {
+    // s56 (ADR-0059): the radio's own hardware list, so the app names and offers exactly what this radio has (the QX7 has
+    // SA-SD, SF, SH; SF and SH have two positions; a pot may be a 6-position switch) instead of guessing "S" + letter by index.
+    // Switch names honour the pilot's custom names (getSwitchName), types the radio's switch settings (g_model.getSwitchType,
+    // which also covers customisable function switches); analog labels come from getAnalogLabel (custom or default).
+    static uint8_t p[400]; uint16_t o = 0;
+    p[o++] = m.seq;
+    p[o++] = (uint8_t)(SWSRC_FIRST_MULTIPOS_SWITCH & 0xFF); p[o++] = (uint8_t)((SWSRC_FIRST_MULTIPOS_SWITCH >> 8) & 0xFF);
+    uint16_t at = o++; uint8_t cnt = 0;
+    uint8_t nsw = switchGetMaxAllSwitches(); if (nsw > MAX_SWITCHES) nsw = MAX_SWITCHES;
+    for (uint8_t i = 0; i < nsw; ++i) {
+      uint8_t t = (uint8_t)g_model.getSwitchType(i);
+      if (t == SWITCH_NONE) continue;
+      char nm[16]; getSwitchName(nm, i); uint8_t nl = 0; while (nl < 8 && nm[nl]) nl++;
+      if ((size_t)o + 3 + nl + 2 > sizeof(p)) break;
+      p[o++] = i; p[o++] = t; p[o++] = nl; memcpy(p + o, nm, nl); o += nl; cnt++;
+    }
+    p[at] = cnt;
+    at = o++; cnt = 0;
+    uint8_t nmain = adcGetMaxInputs(ADC_INPUT_MAIN); if (nmain > MAX_STICKS) nmain = MAX_STICKS;
+    uint8_t nflex = adcGetMaxInputs(ADC_INPUT_FLEX); if (nflex > MAX_POTS) nflex = MAX_POTS;
+    for (uint8_t k = 0; k < 2; ++k) for (uint8_t i = 0; i < (k ? nflex : nmain); ++i) {
+      uint8_t t = k ? (uint8_t)getPotType(i) : 0xFF;
+      if (k && t == FLEX_NONE) continue;
+      const char* lb = getAnalogLabel(k ? ADC_INPUT_FLEX : ADC_INPUT_MAIN, i);
+      uint8_t nl = 0; while (lb && nl < 8 && lb[nl]) nl++;
+      if ((size_t)o + 4 + nl > sizeof(p)) break;
+      p[o++] = k; p[o++] = i; p[o++] = t; p[o++] = nl; if (nl) memcpy(p + o, lb, nl); o += nl; cnt++;
+    }
+    p[at] = cnt;
+    emitMsg(MSG_HW, p, o);
+  }
   else if (m.type == MSG_GET_CAPS) {
     // Value-space anchors (docs/12). The APP names sources/switches/curves from
     // these — no strings on the wire, so a future stringless MCU works unchanged.
@@ -2875,6 +3112,50 @@ static void onFrame(const Message& m, void*)
     const char* base = path; for (const char* q = path; *q; ++q) if (*q == '/') base = q + 1;
     ueStartFilePull(path, base, BULK_LOG);
   }
+  else if (m.type == MSG_SD_DIR) {
+    // s54 (ADR-0059): one page of a folder, folders AND files, in the folder's own order, from entry [start] on; names that
+    // start with '.' (our temp files, "." and "..") are skipped. Fits 240 B, so it goes out on every radio's USB buffer.
+    // reply: {u8 reqSeq, u8 count, u8 flags, u16 next, [entries]} — reqSeq lets the app drop a page it no longer wants
+    static uint8_t p[240]; uint16_t o = 5; uint8_t cnt = 0, flags = 0; uint16_t idx = 0, start = 0;
+    char path[80]; int pl = ueReadPath(m, 0, path, sizeof(path));
+    if (pl > 0 && (uint32_t)(1 + pl + 2) <= m.len) start = (uint16_t)(m.payload[1 + pl] | (m.payload[2 + pl] << 8));
+    DIR dir; FILINFO fno;
+    if (pl > 0 && f_opendir(&dir, path) == FR_OK) {
+      uint16_t guard = 0;
+      while (++guard <= 2000 && f_readdir(&dir, &fno) == FR_OK && fno.fname[0]) {
+        if (fno.fname[0] == '.') continue;
+        if (idx < start) { idx++; continue; }
+        uint8_t nl = 0; while (nl < 48 && fno.fname[nl]) nl++;
+        if ((size_t)o + 6 + nl > sizeof(p)) { flags |= 1; break; }
+        uint32_t sz = (uint32_t)fno.fsize;
+        // attr b0 folder, b1 name cut at 48 characters (the app can't name that entry: it shows it but offers no action)
+        p[o++] = (uint8_t)(((fno.fattrib & AM_DIR) ? 1 : 0) | (fno.fname[nl] ? 2 : 0));
+        p[o++] = sz & 0xFF; p[o++] = (sz >> 8) & 0xFF; p[o++] = (sz >> 16) & 0xFF; p[o++] = (sz >> 24) & 0xFF;
+        p[o++] = nl; memcpy(p + o, fno.fname, nl); o += nl;
+        cnt++; idx++;
+      }
+      if (guard > 2000) flags |= 1;
+      f_closedir(&dir);
+    } else flags |= 2;
+    p[0] = m.seq; p[1] = cnt; p[2] = flags; p[3] = idx & 0xFF; p[4] = idx >> 8;
+    emitMsg(MSG_SD_DIR_RESP, p, o);
+  }
+  else if (m.type == MSG_SD_DELETE || m.type == MSG_SD_MKDIR) {
+    // s54 (ADR-0059): {u8 pathLen, path}. Delete removes a file or an empty folder; mkdir makes one folder.
+    uint8_t reason = 0; char path[80];
+    if (!s_link.companionInputAllowed()) reason = NACK_NOT_ATTACHED;
+    else if (ueReadPath(m, 0, path, sizeof(path)) < 0) reason = NACK_BAD_LENGTH;
+    else if (!ueSdWritable(path)) reason = NACK_SD_PATH;
+    else {
+      FRESULT r = (m.type == MSG_SD_DELETE) ? f_unlink(path) : f_mkdir(path);
+      if (r == FR_NO_FILE || r == FR_NO_PATH) reason = NACK_NOT_FOUND;
+      else if (r == FR_DENIED && m.type == MSG_SD_DELETE) reason = NACK_SD_NOT_EMPTY;
+      else if (r == FR_EXIST) reason = ueIsDir(path) ? 0 : NACK_SD_PATH;   // mkdir: a folder already there is fine, a file isn't
+      else if (r != FR_OK) reason = NACK_PUSH_IO;
+    }
+    if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
+    else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
+  }
   else if (m.type == MSG_MODEL_PUSH_BEGIN) { ueModelPushBegin(m); }   // Phase 3: whole-file write-back
   else if (m.type == MSG_MODEL_PUSH_DATA)  { ueModelPushData(m); }
   else if (m.type == MSG_MODEL_PUSH_END)   { ueModelPushEnd(m); }
@@ -2891,12 +3172,12 @@ static void onFrame(const Message& m, void*)
     if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
     else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
   }
-  else if (m.type == MSG_MODEL_NEW || m.type == MSG_GF_SET) {   // s36 (ADR-0038)
+  else if (m.type == MSG_MODEL_NEW || m.type == MSG_GF_SET || m.type == MSG_SF_SET) {   // s36 (ADR-0038), s55
     uint8_t reason;
     if (!s_link.companionInputAllowed()) reason = NACK_NOT_ATTACHED;
     else if (m.type == MSG_MODEL_NEW) reason = ueModelNew();
     else if (m.len < 5) reason = NACK_BAD_LENGTH;
-    else reason = ueGfApply(m.payload[0], (int16_t)(m.payload[1] | (m.payload[2] << 8)), (int16_t)(m.payload[3] | (m.payload[4] << 8)),
+    else reason = (m.type == MSG_SF_SET ? ueSfApply : ueGfApply)(m.payload[0], (int16_t)(m.payload[1] | (m.payload[2] << 8)), (int16_t)(m.payload[3] | (m.payload[4] << 8)),
                             m.payload + 5, (uint16_t)(m.len - 5));
     if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
     else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
@@ -2995,6 +3276,7 @@ extern "C" void ultraedgeCompanionTick()
     s_rxTail = (uint16_t)((s_rxTail + 1) % RX_RING);
     s_dec.feed(&b, 1);
   }
+  ueModelPushFlushAck();   // s53: one cumulative model-push ACK for every chunk this drain wrote
   UE_CRUMB(13);   // RX ring drained into decoder (frames dispatched via onFrame)
 
   // Link heartbeat/timeout bookkeeping.

@@ -16,7 +16,7 @@ on:
         description: "UltraEdge version (tag) to build"
         type: choice
         options:
-          - "1.2.0 production · EdgeTX 3.0-dev (main, 2026-08-29)"
+          - "1.2.1 production · EdgeTX 3.0-dev (main, 2026-08-29)"
       radios:
         description: "Radios: all, or keys separated by spaces (e.g. pocket qx7 tx16s zorro)"
         type: string

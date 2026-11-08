@@ -19,15 +19,13 @@ EdgeTX does. With the overlay compiled out, the build is byte-for-byte identical
 ## Download
 Get the `.bin` (or `.uf2` for H750 radios) for your radio from **[Releases](../../releases)** and follow `FLASHING.md` in that release.
 
-**v1.2.0** (Latest, production and beta): RadioMaster Pocket, Zorro and FrSky QX7 / QX7S (**not** the QX7 ACCESS) as
-companion builds, RadioMaster TX16S as a full build, hardware-verified 2026-11-01; for app 1.6.2 on Google Play and
-1.6.3 on Play open testing. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to keep the radio's own
-menus. v1.2.0 also has files for the other 52 EdgeTX radios (companion build on black-and-white radios, full build
+**v1.2.1** (Latest, production and beta): RadioMaster Pocket, Zorro and FrSky QX7 / QX7S (**not** the QX7 ACCESS) as
+companion builds, RadioMaster TX16S as a full build, hardware-verified (TX16S 2026-11-07, the others 2026-11-08); for app 1.6.4 on Google Play and
+1.6.5 on Play open testing. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to keep the radio's own
+menus. v1.2.1 also has files for the other 52 EdgeTX radios (companion build on black-and-white radios, full build
 on colour radios): built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
 [User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
 
-**Known issue:** the QX7 and other STM32F2 radios (X9D, X9D+, X9 Lite, T12, TX12, T8 and similar) don't identify
-themselves to the app on v1.2.0, so My Radios and per-radio lists use one shared set for them. Fixed in v1.2.1.
 
 ## Get the app
 - **UltraEdge for EdgeTX RC Radios** (Google Play): https://play.google.com/store/apps/details?id=com.ultraedge.companion
