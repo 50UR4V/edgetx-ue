@@ -20,8 +20,6 @@ checklist below on the real radio.
 | 🔨 Built, not yet verified | Firmware builds and passes our build checks, but nobody has run it on this radio yet. **Help us verify it.** |
 | ❌ Not supported yet (reason) | No working build yet, and why. |
 
-*Smoke-tested* means the owner flashed that build and used it, without running the full checklist.
-
 **Build** says which firmware you get:
 - **Companion**: the radio's own model and radio-settings menus are removed and live in the app. The radio still
   flies, shows its main view and lets you pick a model. Used on every black-and-white screen radio, because those
