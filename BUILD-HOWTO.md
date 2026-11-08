@@ -4,7 +4,13 @@ This fork is **EdgeTX + one self-contained overlay** (`radio/src/thirdparty/ultr
 `#if defined(USB_COMPANION)`-guarded hooks). Building it is the normal EdgeTX build with **one extra
 flag: `-DUSB_COMPANION=ON`**.
 
-**Codespaces** needs nothing installed. **Local** is faster if you already build EdgeTX.
+**Easiest: the [UltraEdge firmware builder](https://github.com/50UR4V/ultraedge-firmware-builder).** Pick a version and your radio in a form, and GitHub builds
+it for you, free, with nothing to install. The steps below are for building by hand: **Codespaces** needs nothing
+installed, **Local** is faster if you already build EdgeTX.
+
+**UltraEdge is built on EdgeTX 3.0-dev** (EdgeTX's development line, base `90bbce17`), not EdgeTX 2.11 or 2.12. EdgeTX
+updates your models and settings on the SD card when you flash it. Back up your SD card first; if you go back to stock
+EdgeTX 2.x later, restore that backup.
 
 > Most radios don't need a build: [Releases](../../releases) has v1.2.1 for every radio in SUPPORTED-RADIOS (v1.1.2.4
 > full builds as the fallback for Pocket, Zorro and QX7). Build only if your radio isn't there or you want to change the config.

@@ -37,8 +37,9 @@ Report problems in [UltraEdge-app issues](https://github.com/50UR4V/UltraEdge-ap
 Version page lines (FW, VERS, GIT#, DATE) and the app's diagnostics log.
 
 ## Build it yourself
-[`BUILD-HOWTO.md`](BUILD-HOWTO.md) covers GitHub Codespaces (in the browser) and a local build (macOS Arm toolchain or
-the EdgeTX Docker image).
+The [UltraEdge firmware builder](https://github.com/50UR4V/ultraedge-firmware-builder) builds the release for your radio from a form on GitHub, free, with
+nothing to install. [`BUILD-HOWTO.md`](BUILD-HOWTO.md) covers building by hand: GitHub Codespaces (in the browser) and
+a local build (macOS Arm toolchain or the EdgeTX Docker image).
 
 ## Relationship to upstream EdgeTX
 This fork tracks a pinned EdgeTX base commit and adds one overlay: the `radio/src/thirdparty/ultraedge/` module plus
