@@ -6,7 +6,7 @@ flag: `-DUSB_COMPANION=ON`**.
 
 **Codespaces** needs nothing installed. **Local** is faster if you already build EdgeTX.
 
-> Most radios don't need a build: [Releases](../../releases) has v1.2.0 for every radio in SUPPORTED-RADIOS (v1.1.2.4
+> Most radios don't need a build: [Releases](../../releases) has v1.2.1 for every radio in SUPPORTED-RADIOS (v1.1.2.4
 > full builds as the fallback for Pocket, Zorro and QX7). Build only if your radio isn't there or you want to change the config.
 
 ---
@@ -17,7 +17,7 @@ EdgeTX ships a dev container, so a Codespace comes with the full toolchain prein
 guide for background: <https://edgetx.org/edgetx/latest/building/codespaces/>.
 
 1. **Fork isn't required** — on this repo, click **`< > Code` ▸ Codespaces ▸ Create codespace** on branch `ultraedge`
-   (tag `v1.2.0` is the current release, companion and full builds alike).
+   (tag `v1.2.1` is the current release, companion and full builds alike).
    Wait for the container to finish building (first run takes a few minutes).
 2. In the Codespace terminal, configure + build for your radio (example: **RadioMaster Pocket**):
    ```bash
@@ -71,7 +71,7 @@ Once `arm-none-eabi-gcc` is on your `PATH`, the same `cmake … && cmake --build
 ## Per-radio flags
 
 Every build uses `-DTRANSLATIONS=EN -DDEFAULT_TEMPLATE_SETUP=17 -DUSB_COMPANION=ON` plus the radio's flags below:
-the flags the v1.2.0 release files were built with. `-DPCB` / `-DPCBREV` select the board. On the 512 KB Pocket,
+the flags the v1.2.1 release files were built with. `-DPCB` / `-DPCBREV` select the board. On the 512 KB Pocket,
 Zorro and QX7 the companion sits near the flash ceiling, so `MULTIMODULE`, `HELI` and `GHOST` are trimmed there. Keep
 **`-DLUA` on**: the companion's raw-telemetry passthrough uses EdgeTX's LUA-gated TelemetryQueue and won't compile
 without it.
@@ -82,10 +82,10 @@ for a full build that keeps every EdgeTX menu (it may not fit in 512 KB of flash
 
 | Radio | Flags | Notes |
 |---|---|---|
-| RadioMaster Pocket | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.0 (2026-11-01), companion build. Internal CROSSFIRE; external multi and PXX1 left out to fit flash. |
-| RadioMaster Zorro | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.0 (2026-11-01), companion build. Tight flash fit, like the Pocket. |
-| FrSky Taranis Q X7 / Q X7S | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES -DUI_COMPANION=YES` | Verified on v1.2.0 (2026-11-01), companion build. The internal module is XJT/PXX1, so keep `PXX1=YES`. |
-| RadioMaster TX16S / TX16S MKII | `-DPCB=X10 -DPCBREV=TX16S` | Verified on v1.2.0 (2026-11-01), full build. |
+| RadioMaster Pocket | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.1 (2026-11-08), companion build. Internal CROSSFIRE; external multi and PXX1 left out to fit flash. |
+| RadioMaster Zorro | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.1 (2026-11-08), companion build. Tight flash fit, like the Pocket. |
+| FrSky Taranis Q X7 / Q X7S | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES -DUI_COMPANION=YES` | Verified on v1.2.1 (2026-11-08), companion build. The internal module is XJT/PXX1, so keep `PXX1=YES`. |
+| RadioMaster TX16S / TX16S MKII | `-DPCB=X10 -DPCBREV=TX16S` | Verified on v1.2.1 (2026-11-07), full build. |
 | FrSky Taranis Q X7 ACCESS | `-DPCB=X7 -DPCBREV=ACCESS -DPXX1=YES -DUI_COMPANION=YES` |  |
 | RadioMaster Boxer | `-DPCB=X7 -DPCBREV=BOXER -DUI_COMPANION=YES` |  |
 | RadioMaster GX12 | `-DPCB=X7 -DPCBREV=GX12 -DUI_COMPANION=YES` |  |

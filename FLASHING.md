@@ -91,7 +91,7 @@ key). A companion radio connects to the app without asking; ENTER switches the m
 long ENTER saves the default. Details: [USB mode on companion builds](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/02-getting-started.md#usb-mode-on-companion-builds)
 in the User Manual.
 
-Problems? Go back to your previous firmware (stock EdgeTX, UltraEdge v1.1.2.4 or v1.1.2.3) the same way.
+Problems? Go back to your previous firmware (stock EdgeTX, UltraEdge v1.2.0, v1.1.2.4 or v1.1.2.3) the same way.
 
 ---
 UltraEdge is a community project, not affiliated with or endorsed by EdgeTX, FrSky or RadioMaster. GPL-2.0-only; the
