@@ -4,7 +4,7 @@
 it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
 that it works on the real radio.
 
-Firmware **v1.2.1** for every radio below (app **1.6.4**, or **1.6.5 beta**). It is built on **EdgeTX 3.0-dev** (base
+Firmware **v1.2.1** for every radio below (app **1.6.6**, or **1.6.7 beta**). It is built on **EdgeTX 3.0-dev** (base
 `90bbce17`), not EdgeTX 2.x: back up your SD card before you flash, and restore it if you go back to stock EdgeTX 2.x.
 Want another language or build option? Build your own file with the [firmware builder](https://github.com/50UR4V/ultraedge-firmware-builder).
 
