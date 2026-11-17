@@ -26,7 +26,6 @@ menus. v1.2.1 also has files for the other 52 EdgeTX radios (companion build on 
 on colour radios): built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
 [User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
 
-
 ## Get the app
 - **UltraEdge for EdgeTX RC Radios** (Google Play): https://play.google.com/store/apps/details?id=com.ultraedge.companion
 - **iPhone:** in development; [sponsor the testing](https://github.com/sponsors/50UR4V) to get it to the App Store (planned February 2027, tentative).
@@ -44,8 +43,7 @@ a local build (macOS Arm toolchain or the EdgeTX Docker image).
 ## Relationship to upstream EdgeTX
 This fork tracks a pinned EdgeTX base commit and adds one overlay: the `radio/src/thirdparty/ultraedge/` module plus
 small `#if defined(USB_COMPANION)` hooks into audio, telemetry and USB. We plan to keep rebasing onto EdgeTX and to
-offer the hooks upstream. UltraEdge is a community project, **not affiliated with or endorsed by EdgeTX, FrSky or
-RadioMaster**.
+offer the hooks upstream.
 
 ## License
 EdgeTX is licensed **GPL-2.0-only**. This fork is a derivative work under the same terms; the overlay files carry
