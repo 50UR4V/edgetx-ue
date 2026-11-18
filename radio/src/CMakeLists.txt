@@ -151,6 +151,43 @@ if(UE_DEBUG_CRUMBS)
   # Never enable for a release build. See docs/decisions (TX16S colorlcd shutdown investigation).
   add_definitions(-DUE_DEBUG_CRUMBS)
 endif()
+# UltraEdge s52 (ADR-0057, research): the companion on an AUX serial port ("UltraEdge" mode, ESP32-C3 bridge).
+option(UE_AUXLINK "UltraEdge: companion link on an AUX serial port (ESP32-C3 wireless bridge, ADR-0057)" OFF)
+if(UE_AUXLINK)
+  if(NOT USB_COMPANION)
+    message(FATAL_ERROR "UE_AUXLINK needs USB_COMPANION")
+  endif()
+  add_definitions(-DUE_AUXLINK)
+endif()
+option(UE_AUXMOD "UltraEdge s60 (ADR-0063): QX7 wireless hardware mod — no BT trainer, AUX1 on USART3 for the ESP32-C3" OFF)
+if(UE_AUXMOD)
+  if(NOT UE_AUXLINK OR NOT FLAVOUR STREQUAL "x7")
+    message(FATAL_ERROR "UE_AUXMOD is only for the QX7 (flavour x7) with UE_AUXLINK")
+  endif()
+  add_definitions(-DUE_AUXMOD)
+endif()
+option(UE_BAYLINK "UltraEdge s61/s72 (ADR-0064): the companion link in the external module bay (ESP32-C3 bay module), in every release image" OFF)
+if(UE_BAYLINK)
+  # s72 (owner 2026-11-15, "UltraEdge goes wireless", universal image): any radio with an external module bay. The radio
+  # needs the bay itself (HARDWARE_EXTERNAL_MODULE) and, for route B, the bay's S.Port UART (TELEMETRY_USART, checked in
+  # companion_emit.cpp with the reason). AUXMOD images carry it too (AUX1 is on USART3 there, the bay on S.Port).
+  if(NOT UE_AUXLINK)
+    message(FATAL_ERROR "UE_BAYLINK needs UE_AUXLINK (the s52 companion transport the bay link plugs into)")
+  endif()
+  if(NOT HARDWARE_EXTERNAL_MODULE)
+    message(FATAL_ERROR "UE_BAYLINK: ${FLAVOUR} has no external module bay (HARDWARE_EXTERNAL_MODULE is off), so it can't carry the bay link")
+  endif()
+  add_definitions(-DUE_BAYLINK)
+  # s63 (owner 2026-11-13, "Route B only for now"): every bay radio runs UE-HD on S.Port. UE_BAY_ROUTE_A=ON brings
+  # back route A (full-duplex bay USART on PPM/heartbeat) on the Pocket/Zorro, the fallback if the bench hits a ceiling.
+  option(UE_BAY_ROUTE_A "UltraEdge s61 route A on the Pocket/Zorro bay instead of UE-HD (s63 fallback)" OFF)
+  if(UE_BAY_ROUTE_A AND NOT (FLAVOUR STREQUAL "pocket" OR FLAVOUR STREQUAL "zorro"))
+    message(FATAL_ERROR "UE_BAY_ROUTE_A is only for the Pocket/Zorro (bench fallback); ${FLAVOUR} uses route B (UE-HD on S.Port)")
+  endif()
+  if(NOT UE_BAY_ROUTE_A)
+    add_definitions(-DUE_BAY_HD)   # s62 (ADR-0064 route B): UE-HD on the one-wire S.Port pin
+  endif()
+endif()
 if(USB_COMPANION)
   add_definitions(-DUSB_COMPANION)
   # The companion rides the STANDARD USB serial (CDC/VCP) mode — there is no separate UE USB mode
@@ -220,6 +257,13 @@ endif()
 
 if(ARCH STREQUAL ARM)
   include(targets/common/arm/CMakeLists.txt)
+endif()
+
+# s72 (ADR-0064): a radio whose internal module can be an XJT (PXX1) runs that module's telemetry on the S.Port UART the
+# bay link uses (QX7, X9D...). Known only after the line above. The bay then waits while the model's Internal RF is an
+# XJT (checked at run time, so a TX16S with a 4-in-1 is not affected).
+if(UE_BAYLINK AND NOT UE_BAY_ROUTE_A AND INTERNAL_MODULE_PXX1)
+  add_definitions(-DUE_BAY_HD_INT_SPORT)
 endif()
 
 # Generate hardware definitions from hal.h

@@ -177,6 +177,12 @@ static SerialPortState* getSerialPortState(uint8_t port_nr)
 // TODO: replace serialSetupCallBacks & serialSetupPort
 //       with usage based handlers.
 //
+#if defined(UE_AUXLINK)
+// UltraEdge s52 (ADR-0057): 460800 is +0.16 % off on every F2/F4 APB1 USART (921600 is ~1 %)
+#define UE_AUX_BAUDRATE 460800
+extern "C" void ueAuxSetSerialDriver(void* ctx, const etx_serial_driver_t* drv);
+#endif
+
 static void serialSetCallBacks(int mode, void* ctx, const etx_serial_port_t* port)
 {
   void (*sendByte)(void*, uint8_t) = nullptr;
@@ -248,6 +254,12 @@ static void serialSetCallBacks(int mode, void* ctx, const etx_serial_port_t* por
 #if defined(INTERNAL_GPS)
   case UART_MODE_GPS:
     gpsSetSerialDriver(ctx, drv, GPS_PROTOCOL_AUTO);
+    break;
+#endif
+
+#if defined(UE_AUXLINK)
+  case UART_MODE_ULTRAEDGE:   // UltraEdge s52: the companion polls this port from the menus task (ADR-0057)
+    ueAuxSetSerialDriver(ctx, drv);
     break;
 #endif
 
@@ -343,6 +355,13 @@ static void serialSetupPort(int mode, etx_serial_init& params)
 #if defined(INTERNAL_GPS)
   case UART_MODE_GPS:
     params.baudrate = GPS_USART_BAUDRATE;
+    params.direction = ETX_Dir_TX_RX;
+    break;
+#endif
+
+#if defined(UE_AUXLINK)
+  case UART_MODE_ULTRAEDGE:
+    params.baudrate = UE_AUX_BAUDRATE;
     params.direction = ETX_Dir_TX_RX;
     break;
 #endif

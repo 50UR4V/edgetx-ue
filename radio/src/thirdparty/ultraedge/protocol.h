@@ -156,6 +156,8 @@ enum MsgType : uint8_t {
   MSG_CAL      = 0x41, // phone->radio: {u8 op}  0=start(snapshot) 1=set-midpoint 2=store 3=cancel
   MSG_CAL_LIVE = 0x42, // radio->phone: {u8 count, i16[count] raw}  live analog values during calibration
   MSG_MOD_ACTION = 0x43, // phone->radio: {u8 module, u8 action}  0=normal/stop 1=bind 2=range (Set 3c). GATED.
+  // s68 (ADR-0066, CAP_TRIMS): the trim commands of EdgeTX's own menus, run with EdgeTX's own functions. GATED.
+  MSG_TRIM_OP    = 0x4F, // phone->radio: {u8 op (TrimOp), u8 arg} -> ACK {seq} / NACK {seq, reason}
 
   // ---- V2 BULK transfer + model file (docs/protocol/PROTOCOL-V4.md §8-9) -----
   // Reliable, chunked transfer for anything bigger than one payload: model/radio YAML (source of
@@ -359,6 +361,8 @@ enum ConfigField : uint16_t {
   CFG_VAR_CMAX       =68,  // T_I16   centre band high, 0.1 m/s (5 + centerMax)
   CFG_VAR_CTONE      =69,  // T_ENUM  centre: Tone / Silent
   CFG_USE_GF         =70,  // T_BOOL  this model uses the global functions (!noGlobalFunctions)
+  CFG_GEN_AUX1_MODE  =71,  // s59 (ADR-0062): T_ENUM AUX1 port 0 Off / 1 UltraEdge (wireless) / 2 another mode (read-only); radio saves it
+  // 72: RETIRED, never reuse (s69 draft CFG_GEN_AUX_ARM_SW, 2026-11-14, never shipped; the arm switch is in /UE/WIRELESS.TXT)
 
   // ---- Outputs (docs/10) --------------------------------------------------
   // Per-channel detail field id = CFG_OUT_BASE | (channel<<4) | OutSub.
@@ -562,7 +566,22 @@ enum NackReason : uint8_t {
   NACK_SD_PATH    = 14,   // s54: that SD path may not be written (outside SOUNDS/SCRIPTS/WIDGETS/IMAGES/THEMES/LOGS, a
                           //   folder root, "..", or the flight log being recorded)
   NACK_SD_NOT_EMPTY = 15, // s54: the folder still has files in it
+  NACK_AUX_IN_USE = 16,   // s59: AUX1 is set to another mode (trainer, telemetry, …); the app never overwrites it
 };
+
+// s68 (ADR-0066): MSG_TRIM_OP ops. Each runs the code path of the radio's own menu item, in the menus task (the same task
+// EdgeTX's menus run in), and leaves the model dirty for EdgeTX's normal save. Ops 1-3 change subtrims and op 0 the trim
+// modes (C1 data in the model file): the app re-pulls the model after an ACK, as it does after a typed write.
+enum TrimOp : uint8_t {
+  TRIM_RESET        = 0, // every trim of every flight mode cleared (Model Setup > Trims "Reset": memclear of each FM's trim[])
+  TRIMS_TO_SUBTRIMS = 1, // Outputs "Trims => Subtrims": moveTrimsToOffsets() (arg ignored)
+  TRIM_TO_SUBTRIM   = 2, // channel menu "Copy trim to subtrim": copyTrimsToOffset(arg), arg = channel 0..MAX_OUTPUT_CHANNELS-1
+  STICK_TO_SUBTRIM  = 3, // channel menu "Copy stick to subtrim": copySticksToOffset(arg)
+};
+// NACK reasons for MSG_TRIM_OP: NACK_NOT_ATTACHED, NACK_BAD_LENGTH (< 2 bytes), NACK_OUT_OF_RANGE (unknown op or channel),
+// NACK_PUSH_STATE (an app save of the active model is being received: retry after it commits, else its reload would bring
+// the old subtrims back).
+
 
 // ---- Roles & capability bits ------------------------------------------------
 enum Role : uint8_t { ROLE_RADIO = 0, ROLE_PHONE = 1 };
@@ -587,6 +606,12 @@ enum Caps : uint32_t {
   CAP_SF_SET       = 1u << 15, // s55 (ADR-0059): MSG_SF_SET sets one model special function (~40 B instead of the whole model file)
   CAP_HW_NAMES     = 1u << 16, // s56 (ADR-0059): MSG_GET_HW answers with the radio's switches (name, 2/3-pos) and sticks/pots/sliders/6-pos
   CAP_LIST_ON_CH   = 1u << 17, // s57: MSG_LIST_OP APPEND on mixes/inputs with arg = channel/input + 1 adds the line on that one, at EdgeTX's place
+  CAP_AUX_WINDOW   = 1u << 18, // s52 (ADR-0057): AUX link RX buffer is 2 KB — over the wireless bridge the phone may keep 1.5 KB of a model push in flight
+  CAP_AUX_MODE     = 1u << 19, // s59 (ADR-0062): this radio has an AUX1 port and takes CFG_GEN_AUX1_MODE (Off/UltraEdge) from the app
+  CAP_FAST_STICKS  = 1u << 20, // s65 (ADR-0065): STREAM_SOURCES asked above 30 Hz adds sticks-only MSG_SOURCES frames every 10 ms (the full set stays at its normal pace)
+  CAP_TRIMS        = 1u << 21, // s68 (ADR-0066): CAPS CAP_N_TRIM = this radio's trim count (keysGetMaxTrims), an app save of the
+                               //   active model keeps the radio's live trim and GVar values, MSG_TRIM_OP is answered
+  // bit 22: RETIRED, never reuse (s69 draft CAP_ARM_SWITCH, 2026-11-14, never shipped)
   CAP_SD_FILES     = 1u << 14, // s54 (ADR-0059): MSG_SD_DIR / SD_DELETE / SD_MKDIR + MODEL_PUSH kind BULK_SD_FILE
 };
 

@@ -170,6 +170,15 @@ static void sanitizeMixerLines()
   if (dirty) storageDirty(EE_MODEL);
 }
 
+#if defined(USB_COMPANION)
+// s68 (ADR-0066): set by the companion around the reload that follows an app save of the ACTIVE model. The pilot is
+// mid-session: like an edit in the radio's own menus, the save must not reset the flight (timers, telemetry, logical
+// switches, special-function state, function-switch positions, the ONE switch, scripts that did not change).
+bool ueKeepFlightState = false;
+bool ueReloadModelScripts = true;   // with ueKeepFlightState: the model's script set changed, load it again
+void ueReloadHoldEnd();             // s68 option b: the app-save reload releases the held mixer here (no-op otherwise)
+#endif
+
 void postModelLoad(bool alarms)
 {
 #if defined(COLORLCD)
@@ -206,6 +215,9 @@ void postModelLoad(bool alarms)
 #endif
 
 #if defined(FUNCTION_SWITCHES)
+#if defined(USB_COMPANION)
+  if (!ueKeepFlightState)
+#endif
   setFSStartupPosition();
 #endif
 
@@ -271,6 +283,9 @@ if(g_model.rssiSource) {
   MultiRfProtocols::removeInstance(EXTERNAL_MODULE);
 #endif
 
+#if defined(USB_COMPANION)
+  if (!ueKeepFlightState) {
+#endif
   AUDIO_FLUSH();
   flightReset(false);
 
@@ -290,6 +305,9 @@ if(g_model.rssiSource) {
       telemetryItems[i].timeout = TELEMETRY_SENSOR_TIMEOUT_UNAVAILABLE;
     }
   }
+#if defined(USB_COMPANION)
+  }
+#endif
 
   loadCurves();
   sanitizeMixerLines();
@@ -299,6 +317,10 @@ if(g_model.rssiSource) {
     checkAll();
     PLAY_MODEL_NAME();
   }
+#endif
+
+#if defined(USB_COMPANION)
+  ueReloadHoldEnd();   // the model is complete: let the mixer run again before the slow part below
 #endif
 
   // Mixer should only be restarted
@@ -314,6 +336,9 @@ if(g_model.rssiSource) {
   LOAD_MODEL_BITMAP();
 #endif
 
+#if defined(USB_COMPANION)
+  if (!ueKeepFlightState || ueReloadModelScripts)
+#endif
   LUA_LOAD_MODEL_SCRIPTS();
 
   SEND_FAILSAFE_1S();

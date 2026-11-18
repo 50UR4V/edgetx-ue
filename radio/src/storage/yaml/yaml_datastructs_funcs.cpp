@@ -1446,6 +1446,11 @@ static uint32_t r_swtchSrc(const YamlNode* node, const char* val, uint8_t val_le
     return neg ? -ival : ival;
 }
 
+#if defined(UE_AUXLINK)
+// UltraEdge s52: the pilot's "armed" switch for the wireless link is written by switch name in /UE/AUXARM.TXT
+swsrc_t ueParseSwitchName(const char* val, uint8_t len) { return (swsrc_t)(int32_t)r_swtchSrc(nullptr, val, len); }
+#endif
+
 static bool w_swtchSrc_unquoted(const YamlNode* node, uint32_t val,
                                 yaml_writer_func wf, void* opaque)
 {
@@ -2660,6 +2665,9 @@ static const struct YamlIdStr enum_UartModes[] = {
   {  UART_MODE_DEBUG, "DEBUG"  },
   {  UART_MODE_SPACEMOUSE, "SPACEMOUSE"  },
   {  UART_MODE_EXT_MODULE, "EXT_MODULE"  },
+#if defined(UE_AUXLINK)
+  {  UART_MODE_ULTRAEDGE, "ULTRAEDGE"  },   // UltraEdge s52 (ADR-0057)
+#endif
   {  0, NULL  }
 };
 

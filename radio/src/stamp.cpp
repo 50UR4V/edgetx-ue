@@ -69,7 +69,11 @@
     #error "ue_version.h is incomplete: build UltraEdge firmware with firmware/v4/build-fw.sh"
   #endif
   #if defined(UI_COMPANION)
+    #if defined(UE_AUXMOD)
+    #define UE_VARIANT " companion auxmod"   // s60 (ADR-0063): never offered to a stock QX7, and the reverse
+  #else
     #define UE_VARIANT " companion"
+  #endif
   #else
     #define UE_VARIANT ""
   #endif

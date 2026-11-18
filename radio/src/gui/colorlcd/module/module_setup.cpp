@@ -745,6 +745,11 @@ class ModuleSubTypeChoice : public Choice
   uint8_t moduleIdx;
 };
 
+#if defined(UE_BAYLINK)
+extern "C" bool ueBleShownNow();     // s72: companion_emit.cpp (s64's UE-BLE view of the bay route)
+extern "C" void ueBleChoose(bool on);
+#endif
+
 ModulePage::ModulePage(uint8_t moduleIdx) : Page(ICON_MODEL_SETUP)
 {
   const char* title2 =
@@ -769,8 +774,23 @@ ModulePage::ModulePage(uint8_t moduleIdx) : Page(ICON_MODEL_SETUP)
       new Choice(box, rect_t{}, STR_MODULE_PROTOCOLS, MODULE_TYPE_NONE,
                  MODULE_TYPE_COUNT - 1, GET_DEFAULT(md->type));
 
+#if defined(UE_BAYLINK)
+  // s72 (ADR-0064 decision 9 on the colour UI, owner 2026-11-15): "UE-BLE" after the last real type in the External RF
+  // list, as the app shows it (s64). A view of the radio-wide bay route, never stored: the model stays External Off.
+  // Shown when the route is the bay and this model's External RF is Off; picking it turns the bay route on (saved in
+  // /UE/LINK.TXT), picking Off where it was shown turns it off. The same switch as Connect: BLE bay (SYS › UltraEdge).
+  if (moduleIdx == EXTERNAL_MODULE) {
+    moduleChoice->addValue("UE-BLE");   // index MODULE_TYPE_COUNT
+    moduleChoice->setGetValueHandler([=]() {
+      return (md->type == MODULE_TYPE_NONE && ueBleShownNow()) ? (int)MODULE_TYPE_COUNT : (int)md->type;
+    });
+  }
+#endif
   moduleChoice->setAvailableHandler([=](int8_t moduleType) {
     if (moduleType == MODULE_TYPE_NONE) return true;
+#if defined(UE_BAYLINK)
+    if (moduleType == MODULE_TYPE_COUNT) return moduleIdx == EXTERNAL_MODULE;
+#endif
     return moduleIdx == INTERNAL_MODULE ? isInternalModuleAvailable(moduleType)
                                         : isExternalModuleAvailable(moduleType);
   });
@@ -780,6 +800,13 @@ ModulePage::ModulePage(uint8_t moduleIdx) : Page(ICON_MODEL_SETUP)
 
   // This needs to be after moduleWindow has been created
   moduleChoice->setSetValueHandler([=](int32_t newValue) {
+#if defined(UE_BAYLINK)
+    if (moduleIdx == EXTERNAL_MODULE) {   // s72: UE-BLE on, or Off where UE-BLE was shown
+      bool shown = ueBleShownNow();
+      if (newValue == MODULE_TYPE_COUNT) { newValue = MODULE_TYPE_NONE; ueBleChoose(true); }
+      else if (newValue == MODULE_TYPE_NONE && shown) ueBleChoose(false);
+    }
+#endif
     setModuleType(moduleIdx, newValue);
 
     moduleWindow->updateModule();

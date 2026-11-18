@@ -23,6 +23,10 @@
 
 #define MODELSEL_W                     LCD_W
 
+#if defined(UE_BAYLINK)
+extern "C" bool ueBayModelSwitchOk(uint8_t idx);   // s64 (ADR-0064 decision 10): the bay carries the Bluetooth link
+#endif
+
 void onDeleteModelConfirm(const char * result)
 {
   if (result == STR_OK) {
@@ -41,6 +45,10 @@ void onModelSelectMenu(const char * result)
       if (!confirmModelChange())
         return;
     }
+#if defined(UE_BAYLINK)
+    if (!ueBayModelSwitchOk(sub))   // s64: this model takes the bay: ENTER to continue, EXIT to cancel
+      return;
+#endif
     selectModel(sub);
     if (g_eeGeneral.modelQuickSelect && result == STR_SELECT_MODEL)
       popMenu();

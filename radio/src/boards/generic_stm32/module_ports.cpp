@@ -148,7 +148,13 @@ static const stm32_usart_t extmoduleUSART = {
   .txDMA_IRQ_Prio = 0,
 };
 
+#if defined(UE_BAYLINK)
+// s61 (ADR-0064): the UltraEdge bay link runs 460800 baud into a 10 ms tick and the app pushes up to 1.5 KB unacked
+// (ADR-0058), like the 2 KB AUX ring in s52. 128 B would overrun between two ticks.
+DEFINE_STM32_SERIAL_PORT(ExternalModule, extmoduleUSART, 2048, 0);
+#else
 DEFINE_STM32_SERIAL_PORT(ExternalModule, extmoduleUSART, INTMODULE_FIFO_SIZE, 0);
+#endif
 
 
 #if (defined(EXTMODULE_TX_INVERT_GPIO) && defined(EXTMODULE_RX_INVERT_GPIO)) \

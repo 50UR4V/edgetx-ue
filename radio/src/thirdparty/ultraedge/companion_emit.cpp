@@ -58,13 +58,18 @@
 #include "model_init.h"                       // s36: setModelDefaults (new blank model, mono)
 #include "storage/yaml/yaml_tree_walker.h"   // s36: apply one global-function entry with EdgeTX's own YAML parser
 #include "storage/yaml/yaml_parser.h"
+#include "ue_trims.h"          // s68: the trim-op gate and the live-value keep, host-tested (ue_trims_test.cpp)
 #include "storage/yaml/yaml_datastructs.h"
 #include "protocol.h"
 extern FIL g_oLogFile;              // s54: logs.cpp — the flight log being recorded must not be overwritten/deleted
 #include "stamp.h"                  // s38: VERSION / GIT_STR — the EdgeTX base, for MSG_RADIO_INFO v2
 #include "ue_version.h"             // s38: UE_FW_VERSION / UE_GIT / UE_BUILD_DATE / UE_BUILD_TIME (build-fw.sh)
 #if defined(UI_COMPANION)
-  #define UE_STAMP_VARIANT " companion"
+  #if defined(UE_AUXMOD)
+    #define UE_STAMP_VARIANT " companion auxmod"   // s60 (ADR-0063): never offered to a stock QX7, and the reverse
+  #else
+    #define UE_STAMP_VARIANT " companion"
+  #endif
 #else
   #define UE_STAMP_VARIANT ""
 #endif
@@ -120,6 +125,152 @@ extern uint8_t getCurvePoints(uint8_t index);   // curves.cpp (no header decl); 
 extern void usbSerialPutc(void*, uint8_t c);
 extern void usbSerialSetReceiveDataCb(void*, void (*cb)(uint8_t*, uint32_t));
 extern uint32_t usbSerialFreeSpace();   // bytes free in the CDC TX ring (docs/09)
+
+#if defined(UE_AUXLINK)
+// ---- s52 (ADR-0057, research): the companion on an AUX serial port ---------------------------------------------
+// An ESP32-C3 on the port set to "UltraEdge" bridges the phone (WiFi/BLE) to this UART at 460800. The radio sees the
+// same UE v4 frames as on USB. One transport carries the companion at a time (s_via); the tick arbitrates
+// (ueAuxLinkTransport, below): USB first, never in the middle of a model push, a silent holder is released after 3 s.
+static void* s_auxCtx = nullptr;
+static const etx_serial_driver_t* s_auxDrv = nullptr;
+// serial.cpp: serialSetCallBacks(UART_MODE_ULTRAEDGE, ctx, port) on init, (…, nullptr, …) on teardown (menus task).
+#if defined(UE_BAYLINK)
+// s61 (ADR-0064, prototype): the AUX serial port and the module bay both feed s52's transport. serial.cpp hands over
+// the AUX port (s_ser*); the bay is claimed by the companion itself (s_bay*). ueRouteTick() picks which one is the
+// "AUX" transport the s52 arbitration below sees (s_aux*), from the pilot's route (/UE/LINK.TXT, the Connect: line).
+#include "hal/module_port.h"
+#include "pulses/pulses.h"
+#if !defined(HARDWARE_EXTERNAL_MODULE)
+  #error "UE_BAYLINK needs an external module bay"
+#endif
+#if defined(UE_BAY_HD)
+// s62 (ADR-0064 route B, owner approved UE-HD 2026-11-12): the link runs UE-HD (ue_hd.h, §2.5) on the one-wire S.Port
+// pin. s52 sees a virtual serial driver; ueHdPump() runs the bus. s63 (owner 2026-11-13, route B only): the Pocket and
+// Zorro run it too; their full-duplex bay USART (route A) stays unused unless UE_BAY_ROUTE_A.
+  #if !defined(TELEMETRY_USART)
+    #error "UE_BAY_HD is route B: it needs the bay's S.Port UART"
+  #endif
+  #include "ue_hd.h"
+  #include "os/task.h"
+  #include "os/sleep.h"
+  #include "tasks.h"
+#elif !defined(EXTMODULE_USART)
+  #error "UE_BAYLINK route A needs a full-duplex external module USART (route B is UE_BAY_HD)"
+#endif
+#endif   // UE_BAYLINK
+// s71 (owner D-BAY-5/6, every image): the route (USB / AUX, + bay in a bay build) is chosen on the Connect: line of the
+// companion screen (B&W) or SYS › Radio settings › UltraEdge (colour). serial.cpp hands over the AUX port (s_ser*);
+// ueRouteTick() decides whether it is the "AUX" transport s52's arbitration sees (s_aux*). No /UE/LINK.TXT = AUX: the
+// s52/s59 behaviour before s61, unchanged on a radio whose pilot never touches the Connect: line.
+#include "ue_bay_logic.h"      // the pure decisions, host-tested (ue_bay_logic_test.cpp)
+static void* s_serCtx = nullptr;
+static const etx_serial_driver_t* s_serDrv = nullptr;
+extern "C" void ueAuxSetSerialDriver(void* ctx, const etx_serial_driver_t* drv) { s_serCtx = ctx; s_serDrv = ctx ? drv : nullptr; }
+enum : uint8_t { UE_ROUTE_USB = 0, UE_ROUTE_AUX = 1, UE_ROUTE_BAY = 2 };
+static uint8_t s_route = UE_ROUTE_AUX;        // this session (no LINK.TXT = AUX: the s52/s59 behaviour, unchanged)
+static uint8_t s_routeSaved = UE_ROUTE_AUX;   // /UE/LINK.TXT
+static bool    s_routeLoaded = false;
+#if defined(UE_BAYLINK)
+static etx_module_state_t* volatile s_bay = nullptr;   // read by the pulses hook (mixer task); written in the main task
+static void* s_bayCtx = nullptr;
+static const etx_serial_driver_t* s_bayDrv = nullptr;
+static volatile bool s_bayYieldReq = false;   // the pulses hook wants the bay for the model's RF module
+static uint8_t  s_bayBlock = 0;               // why the bay isn't ours: 0 = it is (or will be), 1 model RF, 2 trainer, 3 port init failed
+static uint32_t s_bayRetryMs = 0;
+#endif   // UE_BAYLINK
+static void ueRouteLoad();
+static void ueRouteTick();
+extern "C" bool ueAuxLinkPresent()
+{
+  ueRouteLoad();
+#if defined(UE_BAYLINK)
+  if (s_route == UE_ROUTE_BAY) return true;
+#endif
+  return s_route == UE_ROUTE_AUX && s_serDrv != nullptr;
+}
+enum : uint8_t { UE_VIA_USB = 0, UE_VIA_AUX = 1 };
+static uint8_t s_via = UE_VIA_USB;
+// TX: our own ring, because the EdgeTX UART FIFO drops bytes silently when full and cannot report room. It is moved
+// to the UART in chunks only when the previous chunk has gone out (DMA where the port has it, e.g. TX16S AUX1).
+static const uint16_t AUX_TX_RING = 2048;
+static uint8_t  s_auxTx[AUX_TX_RING];
+static uint16_t s_auxTxHead = 0, s_auxTxTail = 0;
+// 384 B per chunk: under the 512-slot UART FIFO (which holds one byte less) when the port has no TX DMA.
+// s74 (radio day P-B1): in main SRAM (__DMA = .ram). On an STM32F407 radio (Pocket, Zorro) .bss is the 64 KB CCM,
+// which the DMA controllers can't read, and this is the source of the TX DMA on ports that have one (bay USART6).
+static uint8_t  s_auxStage[384] __DMA;
+static uint32_t s_auxTxBytes = 0, s_auxRxBytes = 0;
+static void auxFlush()
+{
+  if (!s_auxDrv || s_auxTxHead == s_auxTxTail) return;
+  if (s_auxDrv->txCompleted && !s_auxDrv->txCompleted(s_auxCtx)) return;   // previous chunk still on the wire
+  uint16_t n = 0;
+  while (n < sizeof(s_auxStage) && s_auxTxTail != s_auxTxHead) {
+    s_auxStage[n++] = s_auxTx[s_auxTxTail];
+    s_auxTxTail = (uint16_t)((s_auxTxTail + 1) % AUX_TX_RING);
+  }
+  if (s_auxDrv->sendBuffer) s_auxDrv->sendBuffer(s_auxCtx, s_auxStage, n);
+  else for (uint16_t i = 0; i < n; ++i) s_auxDrv->sendByte(s_auxCtx, s_auxStage[i]);
+  s_auxTxBytes += n;
+}
+static void uePutc(uint8_t b)
+{
+  if (s_via != UE_VIA_AUX) { usbSerialPutc(nullptr, b); return; }
+  uint16_t next = (uint16_t)((s_auxTxHead + 1) % AUX_TX_RING);
+  if (next == s_auxTxTail) return;   // callers size every frame against ueTxFree() first (s27), so this never hits
+  s_auxTx[s_auxTxHead] = b;
+  s_auxTxHead = next;
+}
+static uint32_t ueTxFree()
+{
+  if (s_via != UE_VIA_AUX) return usbSerialFreeSpace();
+  auxFlush();
+  return (uint32_t)(AUX_TX_RING - 1 - (uint16_t)((s_auxTxHead + AUX_TX_RING - s_auxTxTail) % AUX_TX_RING));
+}
+#define UE_PUTC(b)   uePutc(b)
+#define UE_TXFREE()  ueTxFree()
+// ---- s59 (ADR-0062): AUX1 mode set from the app (CFG_GEN_AUX1_MODE) ------------------------------------------------
+// The Pocket/Zorro companion builds have no SYS › Hardware menu, so the pilot turns the wireless port on from the app.
+// Only Off <-> UltraEdge: another mode on AUX1 (trainer, telemetry, GPS…) is never overwritten. The radio saves its own
+// settings (storageDirty); the port is re-opened 200 ms later from the tick, after the ACK has gone out, because
+// switching the port the companion may be talking over would cut the ACK off. Menus task only (perMain), like SYS › Hardware.
+#include "serial.h"
+static bool uePushOpen();
+static int8_t   s_aux1Apply = -1;   // pending serialInit(SP_AUX1, mode); -1 = none
+static uint32_t s_aux1ApplyAt = 0;
+static bool ueAux1Exists() { return serialGetPort(SP_AUX1) != nullptr; }
+static uint8_t ueAux1ModeValue()
+{
+  int m = serialGetMode(SP_AUX1);
+  return m == UART_MODE_NONE ? 0 : m == UART_MODE_ULTRAEDGE ? 1 : 2;
+}
+static uint8_t ueAux1ModeSet(uint8_t v)
+{
+  if (!ueAux1Exists()) return ultraedge::NACK_UNSUPPORTED;
+  if (v > 1) return ultraedge::NACK_OUT_OF_RANGE;
+  if (uePushOpen()) return ultraedge::NACK_PUSH_STATE;
+  uint8_t now = ueAux1ModeValue();
+  if (now == 2) return ultraedge::NACK_AUX_IN_USE;
+  if (now == v) return 0;                                    // unchanged: nothing written
+  int mode = v ? UART_MODE_ULTRAEDGE : UART_MODE_NONE;
+  serialSetMode(SP_AUX1, mode);
+  const etx_serial_port_t* port = serialGetPort(SP_AUX1);
+  if (port && port->set_pwr) serialSetPower(SP_AUX1, v != 0);   // TX16S: the module runs on the port's switched 5 V
+  storageDirty(EE_GENERAL);
+  s_aux1Apply = (int8_t)mode; s_aux1ApplyAt = time_get_ms() + 200;
+  return 0;
+}
+static void ueAux1ApplyTick()
+{
+  if (s_aux1Apply < 0 || (int32_t)(time_get_ms() - s_aux1ApplyAt) < 0) return;
+  int mode = s_aux1Apply; s_aux1Apply = -1;
+  serialInit(SP_AUX1, mode);
+}
+static uint32_t ueAuxModeCaps() { return ueAux1Exists() ? (uint32_t)ultraedge::CAP_AUX_MODE : 0u; }
+#else
+#define UE_PUTC(b)   usbSerialPutc(nullptr, (b))
+#define UE_TXFREE()  usbSerialFreeSpace()
+#endif
 
 using namespace ultraedge;
 
@@ -638,8 +789,33 @@ extern const YamlIdStr enum_ModuleType[];
 extern const YamlIdStr enum_Functions[];   // s30: this build's SF YAML names (MSG_RADIO_INFO)
 static uint8_t ueModTypeCount() { uint8_t n = 0; while (enum_ModuleType[n].str) n++; return n; }
 static uint8_t ueModTypeIndexOf(uint8_t type) { for (uint8_t i = 0; enum_ModuleType[i].str; i++) if ((uint8_t)enum_ModuleType[i].id == type) return i; return 0; }
-static const char* s_modTypeOpts[24];
-static uint8_t ueModTypeOpts() { uint8_t n = ueModTypeCount(); if (n > 24) n = 24; for (uint8_t i = 0; i < n; i++) s_modTypeOpts[i] = enum_ModuleType[i].str; return n; }
+static const char* s_modTypeOpts[25];
+static uint8_t ueModTypeReal() { uint8_t n = ueModTypeCount(); return n > 24 ? 24 : n; }   // the real types listed
+#if defined(UE_BAYLINK)
+// s64 (ADR-0064 decision 9, owner 2026-11-13): "UE-BLE" is one more entry after the last real type in the EXTERNAL
+// module's list. It is a view of the radio-wide route, never stored: the model file stays External Off. Shown when
+// the route is the bay and this model's External RF is Off. Picking it (or Off where it was shown) changes the route,
+// applied by ueRouteTick after the write's ACK has gone out (the radio owns /UE/LINK.TXT).
+static uint8_t  s_routeReq = 0xFF;    // route asked through the list, not applied yet
+static uint32_t s_routeReqAt = 0;
+static bool ueBleShown()
+{
+  ueRouteLoad();
+  uint8_t r = s_routeReq != 0xFF ? s_routeReq : s_route;
+  return r == UE_ROUTE_BAY && g_model.moduleData[EXTERNAL_MODULE].type == MODULE_TYPE_NONE;
+}
+#endif
+static uint8_t ueModTypeOpts(uint8_t m)
+{
+  uint8_t n = ueModTypeReal();
+  for (uint8_t i = 0; i < n; i++) s_modTypeOpts[i] = enum_ModuleType[i].str;
+#if defined(UE_BAYLINK)
+  if (m == EXTERNAL_MODULE) s_modTypeOpts[n++] = "UE-BLE";
+#else
+  (void)m;
+#endif
+  return n;
+}
 // s31 (ADR-0034) model trainer mode: the options are exactly the modes THIS radio offers (EdgeTX's own
 // isTrainerModeAvailable + STR_VTRAINERMODES labels), plus the model's current mode so it always shows.
 static const char* s_trnModeOpts[TRAINER_MODE_MAX() + 1];
@@ -696,7 +872,11 @@ static size_t modGet(uint16_t id, uint8_t* out) {
   uint8_t m = (uint8_t)((id - CFG_MOD_BASE) >> 4); if (m >= NUM_MODULES) return 0;
   ModuleData* md = &g_model.moduleData[m];
   switch (id & 0x0F) {
-    case MOD_TYPE:    { uint8_t b = ueModTypeIndexOf(md->type); return cfgValuePayload(id, T_ENUM, &b, 1, out); }
+    case MOD_TYPE:    { uint8_t b = ueModTypeIndexOf(md->type);
+#if defined(UE_BAYLINK)
+      if (m == EXTERNAL_MODULE && ueBleShown()) b = ueModTypeReal();   // s64: UE-BLE
+#endif
+      return cfgValuePayload(id, T_ENUM, &b, 1, out); }
     case MOD_CHANNELS:{ uint16_t v = (uint16_t)(md->channelsCount + 8); uint8_t b[2] = {(uint8_t)(v & 0xFF),(uint8_t)(v >> 8)}; return cfgValuePayload(id, T_U16, b, 2, out); }
     case MOD_CHSTART: { uint16_t v = (uint16_t)md->channelsStart; uint8_t b[2] = {(uint8_t)(v & 0xFF),(uint8_t)(v >> 8)}; return cfgValuePayload(id, T_U16, b, 2, out); }
     case MOD_FAILSAFE:{ uint8_t b = (uint8_t)md->failsafeMode; return cfgValuePayload(id, T_ENUM, &b, 1, out); }
@@ -705,7 +885,19 @@ static uint8_t modSet(uint16_t id, uint8_t t, const uint8_t* d, uint8_t len) {
   uint8_t m = (uint8_t)((id - CFG_MOD_BASE) >> 4); if (m >= NUM_MODULES) return NACK_UNKNOWN_FIELD;
   ModuleData* md = &g_model.moduleData[m];
   switch (id & 0x0F) {
-    case MOD_TYPE:    { if (t != T_ENUM || len != 1) return NACK_BAD_TYPE; if (d[0] >= ueModTypeCount()) return NACK_OUT_OF_RANGE; md->type = (uint8_t)enum_ModuleType[d[0]].id; storageDirty(EE_MODEL); return 0; }
+    case MOD_TYPE:    { if (t != T_ENUM || len != 1) return NACK_BAD_TYPE;
+#if defined(UE_BAYLINK)
+      if (m == EXTERNAL_MODULE) {   // s64: UE-BLE turns the bay route on; Off where UE-BLE was shown turns it off
+        bool shown = ueBleShown();
+        if (d[0] == ueModTypeReal()) {
+          if (md->type != MODULE_TYPE_NONE) { md->type = MODULE_TYPE_NONE; storageDirty(EE_MODEL); }
+          s_routeReq = UE_ROUTE_BAY; s_routeReqAt = 0;
+          return 0;
+        }
+        if (d[0] == 0 && shown) { s_routeReq = UE_ROUTE_USB; s_routeReqAt = 0; return 0; }
+      }
+#endif
+      if (d[0] >= ueModTypeReal()) return NACK_OUT_OF_RANGE; md->type = (uint8_t)enum_ModuleType[d[0]].id; storageDirty(EE_MODEL); return 0; }
     case MOD_CHANNELS:{ if (t != T_U16 || len != 2) return NACK_BAD_TYPE; uint16_t v = d[0]|(d[1]<<8); if (v < 8 || v > 16) return NACK_OUT_OF_RANGE; md->channelsCount = (int8_t)((int)v - 8); storageDirty(EE_MODEL); return 0; }
     case MOD_CHSTART: { if (t != T_U16 || len != 2) return NACK_BAD_TYPE; uint16_t v = d[0]|(d[1]<<8); if (v > 24) return NACK_OUT_OF_RANGE; md->channelsStart = (uint8_t)v; storageDirty(EE_MODEL); return 0; }
     case MOD_FAILSAFE:{ if (t != T_ENUM || len != 1) return NACK_BAD_TYPE; if (d[0] > 4) return NACK_OUT_OF_RANGE; md->failsafeMode = d[0]; storageDirty(EE_MODEL); return 0; }
@@ -763,6 +955,9 @@ static size_t cfgGet(uint16_t id, uint8_t* out) {
     case CFG_TEL_CRIT:     return vU16(id, (uint16_t)(g_model.rfAlarms.critical < 0 ? 0 : g_model.rfAlarms.critical), out);
     case CFG_TEL_NOALARM:  return vBool(id, g_model.disableTelemetryWarning, out);
     case CFG_USE_GF:       return vBool(id, !g_model.noGlobalFunctions, out);   // s36
+#if defined(UE_AUXLINK)
+    case CFG_GEN_AUX1_MODE: { if (!ueAux1Exists()) return 0; uint8_t b = ueAux1ModeValue(); return cfgValuePayload(id, T_ENUM, &b, 1, out); }   // s59
+#endif
 #if defined(VARIO)
     case CFG_VAR_SOURCE:   return vEnum(id, ueVarioIndexOf(g_model.varioData.source), out);
     case CFG_VAR_MIN:      return vI16(id, (int16_t)(-10 + g_model.varioData.min), out);
@@ -906,6 +1101,9 @@ static uint8_t cfgSet(uint16_t id, uint8_t type, const uint8_t* data, uint8_t le
       storageDirty(EE_MODEL); return 0; }
     case CFG_TEL_NOALARM: { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_model.disableTelemetryWarning = data[0] ? 1 : 0; storageDirty(EE_MODEL); return 0; }
     case CFG_USE_GF:      { if (type != T_BOOL || len != 1) return NACK_BAD_TYPE; g_model.noGlobalFunctions = data[0] ? 0 : 1; storageDirty(EE_MODEL); return 0; }   // s36
+#if defined(UE_AUXLINK)
+    case CFG_GEN_AUX1_MODE: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; return ueAux1ModeSet(data[0]); }   // s59
+#endif
 #if defined(VARIO)
     // s36 (ADR-0038) vario — EdgeTX's own ranges (model_telemetry.cpp), friendly units on the wire
     case CFG_VAR_SOURCE: { if (type != T_ENUM || len != 1) return NACK_BAD_TYPE; uint8_t n = ueVarioOpts(); if (data[0] >= n) return NACK_OUT_OF_RANGE;
@@ -1048,8 +1246,15 @@ static size_t buildRowDesc(uint16_t page, const RowDef& r, uint8_t* p) {
   p[o++] = r.kind; p[o++] = r.type; p[o++] = r.icon;
   putI32(p, o, r.vmin); putI32(p, o, r.vmax); putI32(p, o, r.vstep);
   putStr(p, o, r.label); putStr(p, o, r.unit ? r.unit : "");
-  p[o++] = r.optCount;
-  for (uint8_t i = 0; i < r.optCount; ++i) putStr(p, o, r.opts[i]);
+  // s70: the caller's buffer is MAX_PAYLOAD bytes; only the options that fit are sent (with room left for the 3-byte
+  // tail), so no row can write past it. Today's longest rows, the module Type list (~307 bytes with UE-BLE) and the SF
+  // Function list (~293-327 bytes), fit with room to spare; the count below says how many were sent.
+  size_t nAt = o++; uint8_t nOpt = 0;
+  for (; nOpt < r.optCount; ++nOpt) {
+    if (o + 1 + strlen(r.opts[nOpt]) + 3 > MAX_PAYLOAD) { TRACE("UE describe: row %u options cut at %u", (unsigned)r.id, (unsigned)nOpt); break; }
+    putStr(p, o, r.opts[nOpt]);
+  }
+  p[nAt] = nOpt;
   if (r.kind == ROW_LINK || r.kind == ROW_LINE) { p[o++] = r.target & 0xFF; p[o++] = r.target >> 8; }
   if (r.type == T_REF) p[o++] = r.refDomain;
   return o;
@@ -1321,7 +1526,7 @@ static bool pageRow(uint16_t page, uint16_t idx, RowDef& r, char* buf) {
   if (page >= PAGE_MOD_BASE && page < PAGE_MOD_BASE + NUM_MODULES) {
     uint8_t m = (uint8_t)(page - PAGE_MOD_BASE);
     uint16_t b = (uint16_t)(CFG_MOD_BASE | (m << 4));
-    uint8_t nType = ueModTypeOpts();
+    uint8_t nType = ueModTypeOpts(m);
     switch (idx) {
       case 0: mkField(r, b|MOD_TYPE,     T_ENUM, 0, nType-1, 1, "Type", "", s_modTypeOpts, nType, IC_GENERAL); return true;
       case 1: mkField(r, b|MOD_CHANNELS, T_U16, 8,16,1, "RX channels", "", nullptr,0, IC_NONE); return true;
@@ -1556,7 +1761,13 @@ static const uint32_t UE_LOCAL_CAPS = CAP_STRUCTURED | CAP_AUDIO | CAP_TELEM_TYP
                                      | CAP_SF_SET          // s55
                                      | CAP_HW_NAMES        // s56
                                      | CAP_LIST_ON_CH      // s57
-                                     | CAP_PUSH_WINDOW;    // s53
+                                     | CAP_PUSH_WINDOW     // s53
+                                     | CAP_FAST_STICKS     // s65
+                                     | CAP_TRIMS           // s68
+#if defined(UE_AUXLINK)
+                                     | CAP_AUX_WINDOW      // s52: the AUX link's 2 KB RX buffer takes a 1.5 KB push window
+#endif
+                                     ;
 
 static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len);   // fwd decl (defined below) — for ueCalTick
 
@@ -1742,6 +1953,9 @@ static LinkManager s_link(ROLE_RADIO);
 // All writes run in main context (via onFrame in the tick), same as the pull's SD reads.
 static const char* const UE_PUSH_TMP = ".uepush.tmp";
 static bool     s_pushActive = false;
+#if defined(UE_AUXLINK)
+static bool uePushOpen() { return s_pushActive; }   // s59: no AUX1 mode change while a model push is open
+#endif
 static FIL      s_pushFile;
 static uint16_t s_pushXferId = 0;
 static uint32_t s_pushOffset = 0, s_pushTotal = 0;
@@ -1936,6 +2150,176 @@ static void ueModelPushFlushAck() {
   if (s_pushActive) ueModelPushDataAck(s_pushXferId, s_pushOffset);
 }
 
+// s68 (ADR-0066): trims and GVar values are C2 (ADR-0014): the pilot changes them on the radio, in flight too, and the
+// radio's RAM is their truth. The app's model file holds the values of its last pull, so the reload after an app save
+// used to put trims (and GVar values) set on the radio since then back to the old ones. The VALUES are kept across the
+// reload (all flight modes); a trim's mode, the GVar definitions and everything else come from the file. Trims move in
+// the mixer task (checkTrims); the copy and the write-back run inside the reload's mixer hold (below), so no trim step
+// can land on the half-loaded model: a step pressed during the hold is processed after it, on the kept value.
+static uetrims::LiveValues<MAX_FLIGHT_MODES, MAX_TRIMS, MAX_GVARS> s_c2Live;   // 270 B on 9 FMs x 6 trims x 9 GVars
+static_assert(uetrims::OP_RESET == TRIM_RESET && uetrims::OP_TRIMS_TO_SUBTRIMS == TRIMS_TO_SUBTRIMS &&
+              uetrims::OP_TRIM_TO_SUBTRIM == TRIM_TO_SUBTRIM && uetrims::OP_STICK_TO_SUBTRIM == STICK_TO_SUBTRIM, "s68 ops");
+static_assert(uetrims::R_BAD_LENGTH == NACK_BAD_LENGTH && uetrims::R_OUT_OF_RANGE == NACK_OUT_OF_RANGE &&
+              uetrims::R_NOT_ATTACHED == NACK_NOT_ATTACHED && uetrims::R_PUSH_STATE == NACK_PUSH_STATE, "s68 NACKs");
+static void ueC2Keep() {      // inside the reload hold
+  s_c2Live.take(g_model.flightModeData);
+}
+static void ueC2Restore() {   // inside the reload hold
+  bool changed = s_c2Live.putBack(g_model.flightModeData);
+  if (changed) storageDirty(EE_MODEL);   // the file on the SD card has the app's values: EdgeTX writes the live ones back
+}
+
+// s68 (ADR-0066, owner 2026-11-14 "fix it in s68 now"): the same reload used to reset the flight, because postModelLoad
+// runs flightReset (timers, telemetry, logical switches, the ONE switch, throttle trace, silence period), resets every
+// special function's state, reloads the model's scripts, AUDIO_FLUSHes and puts function switches to their start
+// positions. An edit in the radio's own menus does none of that. With ueKeepFlightState set, postModelLoad skips those
+// (storage_common.cpp, s68); everything else it does (data fix-ups, curves, mixer line sort, audio file scan, failsafe
+// send) still runs. Their runtime state is copied before the load and put back after it, inside the reload hold (the
+// mixer can't touch it then). Then, per item, what EdgeTX's menus reset when a definition changes (ue_trims.h):
+// timer start value -> timerReset; LS function changed/removed -> that LS's model-load state; SF function
+// changed/removed -> its active/last-run state cleared; sensor meaning changed/removed -> its value, min and max cleared.
+// The copy (~2.9 KB on mono, lswFm + one SF context + the definition keys) is malloc'ed for the reload only; without
+// the memory the reload resets the flight exactly as before s68.
+extern bool ueKeepFlightState;
+extern bool ueReloadModelScripts;
+uint32_t ueLswStateSize();
+void ueLswStateSave(void* dst);
+void ueLswStateRestore(const void* src);
+void ueLswStateResetOne(uint8_t idx);
+struct UeFlightDefs {
+  tmrstart_t tmrStart[TIMERS];
+  uint8_t lsFunc[MAX_LOGICAL_SWITCHES];
+  uint8_t sfFunc[MAX_SPECIAL_FUNCTIONS];
+  uetrims::SensorKey sensor[MAX_TELEMETRY_SENSORS];
+  uint16_t scripts;   // checksum over what LUA_LOAD_MODEL_SCRIPTS loads: mix scripts, telemetry screens, script SFs
+};
+struct UeFlightKeep {
+  UeFlightDefs before, after;
+  CustomFunctionsContext fn;
+  uint8_t lsw[4];     // ueLswStateSize() bytes, allocated past the end
+};
+static void ueFlightDefsTake(UeFlightDefs& d) {
+  for (uint8_t i = 0; i < TIMERS; ++i) d.tmrStart[i] = g_model.timers[i].start;
+  for (uint8_t i = 0; i < MAX_LOGICAL_SWITCHES; ++i) d.lsFunc[i] = g_model.logicalSw[i].func;
+  uint16_t c = 0xFFFF;
+  for (uint8_t i = 0; i < MAX_SPECIAL_FUNCTIONS; ++i) {
+    const CustomFunctionData& cf = g_model.customFn[i];
+    d.sfFunc[i] = CFN_SWITCH(&cf) ? CFN_FUNC(&cf) : 0xFF;   // no switch = an empty line (EdgeTX's "removed")
+    if (CFN_FUNC(&cf) == FUNC_PLAY_SCRIPT || CFN_FUNC(&cf) == FUNC_RGB_LED) { c = uetrims::crcAdd(c, &i, 1); c = uetrims::crcAdd(c, &cf, sizeof(cf)); }
+  }
+  for (uint8_t i = 0; i < MAX_TELEMETRY_SENSORS; ++i) {
+    const TelemetrySensor& t = g_model.telemetrySensors[i];
+    d.sensor[i] = uetrims::sensorKey(t.type == TELEM_TYPE_CALCULATED, t.id, t.instance, t.subId, t.unit, t.prec);
+  }
+#if defined(PCBHORUS) || defined(PCBTARANIS) || defined(PCBPL18) || defined(PCBST16) || defined(PCBC14)
+  c = uetrims::crcAdd(c, g_model.scriptsData, sizeof(g_model.scriptsData));
+#endif
+#if !defined(COLORLCD)
+  c = uetrims::crcAdd(c, &g_model.screensType, sizeof(g_model.screensType));
+  c = uetrims::crcAdd(c, g_model.screens, sizeof(g_model.screens));
+#endif
+  d.scripts = c;
+}
+static UeFlightKeep* ueFlightKeepAlloc() {   // before the hold: malloc never runs with the mixer held
+  return (UeFlightKeep*)malloc(sizeof(UeFlightKeep) + ueLswStateSize());
+}
+static void ueFlightKeepTake(UeFlightKeep* k) {   // inside the hold, before readModel
+  if (!k) return;
+  ueFlightDefsTake(k->before);
+  k->fn = modelFunctionsContext;
+  ueLswStateSave(k->lsw);
+}
+// Inside the hold, after readModel, before postModelLoad. Sets ueKeepFlightState for postModelLoad (cleared by the caller).
+static void ueFlightKeepPut(UeFlightKeep* k) {
+  if (!k) { ueKeepFlightState = false; ueReloadModelScripts = true; return; }   // no memory: EdgeTX's reset, as before
+  ueFlightDefsTake(k->after);
+  const UeFlightDefs& b = k->before; const UeFlightDefs& a = k->after;
+  modelFunctionsContext = k->fn;
+  ueLswStateRestore(k->lsw);
+  uetrims::forChanged(b.lsFunc, a.lsFunc, MAX_LOGICAL_SWITCHES, [](uint16_t i) { ueLswStateResetOne((uint8_t)i); });
+  uetrims::forChanged(b.sfFunc, a.sfFunc, MAX_SPECIAL_FUNCTIONS, [](uint16_t i) {
+    modelFunctionsContext.activeSwitches &= ~((MASK_CFN_TYPE)1 << i);
+    modelFunctionsContext.activeUISwitches &= ~((MASK_CFN_TYPE)1 << i);
+    modelFunctionsContext.lastFunctionTime[i] = 0;
+  });
+  uetrims::forChanged(b.tmrStart, a.tmrStart, TIMERS, [](uint16_t i) { timerReset((uint8_t)i); });
+  uetrims::forChanged(b.sensor, a.sensor, MAX_TELEMETRY_SENSORS, [](uint16_t i) { telemetryItems[i].clear(); });
+  ueReloadModelScripts = a.scripts != b.scripts;
+  ueKeepFlightState = true;
+}
+
+// s68 option b (owner 2026-11-14, "go with b"): the mixer task is held for the reload, from before readModel's memset
+// until the model is parsed, the kept state is back and postModelLoad has fixed up the data, sorted the mix lines and
+// rebuilt the curves (ueReloadHoldEnd, called by postModelLoad just before pulsesStart). Before s68 the mixer ran on the
+// half-built model: getModuleType read type 0 (none) until moduleData was parsed, so pulsesSendNextFrame de-initialised
+// the RF module and initialised it again, and channels were computed from a model with no mixes. Held, the mixer
+// computes and sends nothing; the modules keep their state (drivers are only fed by the mixer, nothing de-inits on a
+// missed frame) and the receivers keep the last frame. The slow, non-model work (audio file scan, bitmap, Lua) runs
+// after the release.
+// - Lock order: the hold is taken first, with no other lock held (FatFs, audio). Inside it the menus task takes FatFs
+//   (readModel) and, on the no-memory reset path, the audio mutex (AUDIO_FLUSH). The only other mixerMutex takers are
+//   the mixer task (whose locked section waits on nothing the menus task holds) and the timer task (try-lock only).
+// - Watchdog: only the mixer task feeds it (WDG 500 ms). watchdogSuspend(500) = 5 s, as EdgeTX's preModelLoad does.
+// - Bound: HOLD_CAP_MS (200 ms = EdgeTX's own model-load RF gap). Over it once, and every later app save this boot
+//   stops the pulses the way EdgeTX's load does (pulsesStop + 200 ms; postModelLoad's pulsesStart restarts them); a file
+//   over HOLD_MAX_FILE always does. Measured: /UE/SAVEHOLD.TXT (last, max, count, mode), rewritten after each save.
+extern void watchdogSuspend(uint32_t timeout);
+extern void pulsesStop();
+extern void sleep_ms(uint32_t ms);
+static uetrims::HoldStats s_hold;
+static bool s_holdLocked = false, s_holdOpen = false, s_holdStopped = false, s_holdLogDue = false;
+static uint32_t s_holdT0 = 0;
+static void ueReloadHoldBegin(uint32_t fileBytes) {
+  watchdogSuspend(500 /*5 s*/);   // the mixer task, the watchdog's only feeder, waits for this reload
+  s_holdStopped = uetrims::reloadStopsPulses(s_hold, fileBytes);
+  if (s_holdStopped) { pulsesStop(); sleep_ms(200); }   // EdgeTX preModelLoad's RF stop (power output drained)
+  else { mixerTaskLock(); s_holdLocked = true; }
+  s_holdOpen = true;
+  s_holdT0 = time_get_ms();
+}
+void ueReloadHoldEnd() {   // storage_common.cpp postModelLoad (s68), and the reload itself as a backstop
+  if (!s_holdOpen) return;
+  s_holdOpen = false;
+  uint32_t ms = time_get_ms() - s_holdT0;
+  if (s_holdLocked) { s_holdLocked = false; mixerTaskUnlock(); }
+  uetrims::holdRecord(s_hold, ms + (s_holdStopped ? 200 : 0), s_holdStopped);
+  s_holdLogDue = true;
+  TRACE("UE save reload: %s %u ms", s_holdStopped ? "pulses stopped" : "mixer held", (unsigned)ms);
+}
+static void ueHoldLogWrite() {   // menus task, after the ACK went out
+  if (!s_holdLogDue) return;
+  s_holdLogDue = false;
+  char line[72]; uint8_t n = uetrims::holdLine(line, sizeof(line), s_hold);
+  f_mkdir("/UE");
+  FIL f; UINT bw;
+  if (f_open(&f, "/UE/SAVEHOLD.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) return;
+  f_write(&f, line, n, &bw);
+  f_close(&f);
+}
+
+// s68 (ADR-0066): MSG_TRIM_OP — EdgeTX's own trim commands. Called from the companion tick, which runs in the menus task
+// (perMain), the task EdgeTX's Model Setup and Outputs menus call these from; copy*/moveTrimsToOffsets stop and restart
+// the mixer themselves exactly as they do there. Returns 0 or a NackReason.
+static uint8_t ueTrimOp(uint8_t op, uint8_t arg) {
+  switch (op) {
+    case TRIM_RESET:          // colorlcd model_setup.cpp trimsSetupLines "Reset" (B&W: long ENTER on E.Trims > Reset)
+      for (auto& fm : g_model.flightModeData) memclear(&fm.trim, sizeof(fm.trim));
+      storageDirty(EE_MODEL);
+      AUDIO_WARNING1();
+      return 0;
+    case TRIMS_TO_SUBTRIMS:   // Outputs "Trims => Subtrims" (storageDirty + AUDIO_WARNING2 inside)
+      moveTrimsToOffsets();
+      return 0;
+    case TRIM_TO_SUBTRIM:     // Outputs channel menu "Copy trim to subtrim" (channel checked by trimOpCheck)
+      copyTrimsToOffset(arg);
+      return 0;
+    case STICK_TO_SUBTRIM:    // Outputs channel menu "Copy stick to subtrim"
+      copySticksToOffset(arg);
+      return 0;
+  }
+  return NACK_OUT_OF_RANGE;
+}
+
 static void ueModelPushEnd(const Message& m) {
   // {u16 xfer_id} -> verify whole-file CRC + length, then atomic swap (keep .bak) + reload.
   if (m.len < 2) return;
@@ -1999,9 +2383,24 @@ static void ueModelPushEnd(const Message& m) {
     ueModelPushAck(xfer, NACK_PUSH_IO); return;
   }
   // Reload the model live so the pushed edit takes effect immediately (same path EdgeTX uses).
+  // s68 (ADR-0066): an app save of the ACTIVE model keeps the radio's live trim and GVar values (C2, ADR-0014): taken
+  // here, after the whole file arrived, so a trim moved while it streamed in is kept too. Modes and settings come
+  // from the file. Restore-to-radio (BULK_MODEL_NEW) returned above without a reload: a new model flies its own file.
+  // The live flight state (timers, telemetry, logical switches, special functions) is kept the same way (below).
+  // Option b: all of it with the mixer held (ueReloadHoldBegin/End above).
+  UeFlightKeep* fk = ueFlightKeepAlloc();
+  ueReloadHoldBegin(s_pushTotal);
+  ueC2Keep();
+  ueFlightKeepTake(fk);
   readModel(s_pushFn, (uint8_t*)&g_model, sizeof(g_model), MODELS_PATH);
-  postModelLoad(false);
+  ueC2Restore();
+  ueFlightKeepPut(fk);
+  postModelLoad(false);              // releases the hold before its slow, non-model part (ueReloadHoldEnd)
+  ueReloadHoldEnd();                 // backstop: never leave the mixer held
+  free(fk);
+  ueKeepFlightState = false; ueReloadModelScripts = true;   // every other load (select, new, boot) resets as EdgeTX does
   ueModelPushAck(xfer, 0);           // committed
+  ueHoldLogWrite();
 }
 
 // Throttle-idle flight-safety check for model SELECT (defined in edgetx.cpp; no public header declares it).
@@ -2356,17 +2755,17 @@ static uint16_t s_class2Budget = 0;   // refilled each tick
 static bool s_txStalled = false;
 static bool ueTxRoom(size_t n)
 {
-  uint32_t room = usbSerialFreeSpace();
+  uint32_t room = UE_TXFREE();
   if (room >= n) { if (room > 256) s_txStalled = false; return true; }
   if (s_txStalled) return false;
   uint32_t t0 = time_get_ms();
-  while (usbSerialFreeSpace() < n) if (time_get_ms() - t0 >= 20) { s_txStalled = true; return false; }
+  while (UE_TXFREE() < n) if (time_get_ms() - t0 >= 20) { s_txStalled = true; return false; }
   return true;
 }
 static void emitBytes(const uint8_t* b, size_t n)
 {
   if (!ueTxRoom(n)) return;
-  for (size_t i = 0; i < n; ++i) usbSerialPutc(nullptr, b[i]);
+  for (size_t i = 0; i < n; ++i) UE_PUTC(b[i]);
 }
 
 // Build one control/reply frame and emit it, STREAMED byte by byte (no frame buffer). s23: the old version
@@ -2375,8 +2774,8 @@ static void emitBytes(const uint8_t* b, size_t n)
 // forever), long BULK_BEGIN names, long audio paths. Same wire format as encodeFrame (SOF, escaped header +
 // payload + CRC16-CCITT), any length up to MAX_PAYLOAD, and no stack/RAM cost.
 static void emitEsc(uint8_t b) {
-  if (b == SOF || b == ESC) { usbSerialPutc(nullptr, ESC); usbSerialPutc(nullptr, (uint8_t)(b ^ ESC_XOR)); }
-  else usbSerialPutc(nullptr, b);
+  if (b == SOF || b == ESC) { UE_PUTC(ESC); UE_PUTC((uint8_t)(b ^ ESC_XOR)); }
+  else UE_PUTC(b);
 }
 // s51 (v1.2.1): the bytes a frame really takes on the wire (SOF + every escaped header/payload/CRC byte).
 static size_t escLen(const uint8_t* b, size_t n) {
@@ -2396,7 +2795,7 @@ static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len)
   // identified), MSG_SD_LIST_NEWEST_RESP pages with long log names. Escapes are rare (SOF/ESC bytes only), so these fit.
   if (!ueTxRoom(1 + escLen(hdr, HEADER_LEN) + escLen(payload, len) + escLen(cb, 2))) return;
   s_seq++;
-  usbSerialPutc(nullptr, SOF);
+  UE_PUTC(SOF);   // s52: USB or the AUX link, whichever holds the companion
   for (uint8_t i = 0; i < HEADER_LEN; ++i) emitEsc(hdr[i]);
   for (uint16_t i = 0; i < len; ++i) emitEsc(payload[i]);
   emitEsc((uint8_t)(crc & 0xFF)); emitEsc((uint8_t)(crc >> 8));
@@ -2406,7 +2805,7 @@ static void emitMsg(uint8_t type, const uint8_t* payload, uint16_t len)
 static bool emitClass2(const uint8_t* b, size_t n)
 {
   if (n > s_class2Budget) return false;   // over budget this tick — skip (loss-tolerant)
-  if (usbSerialFreeSpace() < n) return false;   // s27: no room right now — skip, never wait (loss-tolerant)
+  if (UE_TXFREE() < n) return false;   // s27: no room right now — skip, never wait (loss-tolerant)
   emitBytes(b, n);
   s_class2Budget -= (uint16_t)n;
   return true;
@@ -2443,7 +2842,10 @@ static size_t buildNextDescribe() {
     }
     if (!r.visible) { s_descRow++; s_descPhase = 0; continue; }
     if (s_descPhase == 0) {
-      uint8_t dp[200]; size_t dn = buildRowDesc(s_descPage, r, dp);
+      // s70: rows with long option lists (module Type ~300 bytes, SF Function ~300) overflowed the 200-byte stack
+      // buffer this used to be. buildNextDescribe runs only in ultraedgeCompanionTick (main task, perMain), one row at
+      // a time, never re-entered: one static payload-sized buffer, off the task stack.
+      static uint8_t dp[MAX_PAYLOAD]; size_t dn = buildRowDesc(s_descPage, r, dp);
       s_descPhase = 1;
       return encodeFrame(MSG_FIELD_DESC, s_seq++, dp, (uint16_t)dn, s_descBuf, sizeof(s_descBuf));
     } else {
@@ -2717,7 +3119,11 @@ static void onFrame(const Message& m, void*)
     }
     // Respond to a host HELLO with HELLO_ACK, advertising THIS build's caps.
     Hello h; h.proto_ver = PROTO_VERSION; h.fw_ver = 0x00040000;
-    h.role = ROLE_RADIO; h.caps = UE_LOCAL_CAPS;
+    h.role = ROLE_RADIO; h.caps = UE_LOCAL_CAPS
+#if defined(UE_AUXLINK)
+             | ueAuxModeCaps()   // s59: only a radio with an AUX1 port
+#endif
+             ;
     n = encodeHello(s_seq++, h, /*ack=*/true, f, sizeof(f));
     emitBytes(f, n);
   }
@@ -2789,6 +3195,16 @@ static void onFrame(const Message& m, void*)
         s_modStateDirty = true;
       }
     }
+    if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
+    else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
+  }
+  else if (m.type == MSG_TRIM_OP) {
+    // s68 (ADR-0066): {u8 op, u8 arg} -> ACK / NACK, like MSG_MOD_ACTION. GATED on ATTACHED. Refused while a model save is
+    // being received: its reload would bring back the subtrims the op just changed (the app retries after the commit).
+    uint8_t op = m.len >= 1 ? m.payload[0] : 0, arg = m.len >= 2 ? m.payload[1] : 0;
+    uint8_t reason = uetrims::trimOpCheck(s_link.companionInputAllowed(), m.len, op, arg,
+                                          s_pushActive && !s_pushIsFile && !s_pushIsNew, MAX_OUTPUT_CHANNELS);
+    if (reason == 0) reason = ueTrimOp(op, arg);
     if (reason == 0) { uint8_t a[1] = { m.seq }; emitMsg(MSG_ACK, a, 1); }
     else { uint8_t nk[2] = { m.seq, reason }; emitMsg(MSG_NACK, nk, 2); }
   }
@@ -2954,9 +3370,13 @@ static void onFrame(const Message& m, void*)
     uint8_t p[160]; size_t o = 1;
     uint8_t cnt = (uint8_t)(sizeof(CAPS_TAB)/sizeof(CAPS_TAB[0]));
     for (uint8_t i = 0; i < cnt; ++i) {
+      // s68 (ADR-0066): the trims this radio has (4 on Pocket/Zorro/QX7, 6 on TX16S), as EdgeTX's menus count them, not
+      // the MAX_TRIMS array size. The app sizes the FM trims, Input > Trim, the trim sources and the trim switches
+      // (CAP_SW_TRIM + 2 per trim, as isSwitchTrimAvailable) from it. The value-space bases above stay MAX_TRIMS-based.
+      int16_t v = CAPS_TAB[i].key == CAP_N_TRIM ? (int16_t)keysGetMaxTrims() : CAPS_TAB[i].val;
       p[o++] = CAPS_TAB[i].key;
-      p[o++] = (uint8_t)(CAPS_TAB[i].val & 0xFF);
-      p[o++] = (uint8_t)((CAPS_TAB[i].val >> 8) & 0xFF);
+      p[o++] = (uint8_t)(v & 0xFF);
+      p[o++] = (uint8_t)((v >> 8) & 0xFF);
     }
     // Dynamic cap: passthrough protocol on the active module (docs/32) — runtime, so appended here.
     { int16_t tpv = (int16_t)telemProto(); p[o++]=CAP_TELEM_PROTO; p[o++]=(uint8_t)(tpv&0xFF); p[o++]=(uint8_t)((tpv>>8)&0xFF); cnt++; }
@@ -3185,7 +3605,7 @@ static void onFrame(const Message& m, void*)
   else if (m.type == MSG_DESCRIBE_PAGE) {
     // Set up a PACED snapshot job (docs/09,10): visible rows (FIELD_DESC + value,
     // or LINK), then PAGE_DESC_END. Emitted from the tick loop, gated by
-    // usbSerialFreeSpace(), so the burst can never overrun the CDC TX ring.
+    // UE_TXFREE(), so the burst can never overrun the CDC TX ring.
     uint16_t page = (m.len >= 2) ? (uint16_t)(m.payload[0] | (m.payload[1] << 8)) : PAGE_MODEL_SETUP;
     s_descPage   = page;
     s_descRow    = 0;
@@ -3221,9 +3641,820 @@ static void ueModelChangeTick() {
   emitMsg(MSG_MODEL_CHANGED, p, (uint16_t)(1 + l));
 }
 
+#if defined(UE_AUXLINK)
+// s52: release whatever the companion was doing on its transport — the same steps as a USB unplug below, without
+// touching the USB RX callback (the caller decides that). The app re-identifies on the next HELLO (R-IDFIRST).
+static Decoder  s_sniffDec;                 // the transport that does NOT hold the link: watched for a valid frame
+static bool     s_sniffWants = false;       // a peer on the other transport is talking (HELLO / heartbeat)
+static uint32_t s_viaLastRxMs = 0;          // last byte on the holder's transport (AUX silence = phone gone)
+static uint32_t s_viaNotAttachedMs = 0;     // how long the holder has been active but not ATTACHED
+static void onSniff(const Message&, void*) { s_sniffWants = true; }
+static void ueLinkRelease()
+{
+  s_companionActive = false;
+  s_inited = false;
+  s_descActive = false; s_descLen = 0;
+  s_subTelemRaw.active = false; telemQueueSet(false);
+  s_subSources.active = false; s_subModState.active = false;
+  if (s_pushActive) ueModelPushDiscard();      // temp file dropped; the live model is untouched (atomic push)
+  s_uxOwner = false; s_sfHead = s_sfTail = 0;
+  ueStopAppModActions();
+  s_link.onTransportDown();
+  s_auxTxHead = s_auxTxTail = 0;
+  s_rxTail = s_rxHead;                        // stale USB bytes belong to the old session
+  s_sniffDec.reset(); s_sniffDec.setCallback(onSniff, nullptr); s_sniffWants = false;
+  s_viaNotAttachedMs = 0;
+}
+static void ueSwitchVia(uint8_t via)
+{
+  ueLinkRelease();
+  s_via = via;
+  s_viaLastRxMs = s_nowMs;
+  if (via == UE_VIA_AUX && s_auxDrv && s_auxDrv->clearRxBuffer) s_auxDrv->clearRxBuffer(s_auxCtx);
+  TRACE("UE link: companion now on %s", via == UE_VIA_AUX ? "AUX" : "USB");
+}
+// Pulls this tick's bytes: the holder's into the companion decoder, the other transport's into the sniffer.
+static void ueAuxDrainRx(bool usbUp)
+{
+  uint8_t b;
+  bool holderRx = false;
+  if (s_auxDrv) {
+    uint16_t guard = 0;
+#if defined(UE_BAY_HD)
+    const uint16_t GUARD = 4096;   // s67: a full 4 KB bay window in one drain (the UE-HD receive ring above)
+#else
+    const uint16_t GUARD = 2048;
+#endif
+    while (guard++ < GUARD && s_auxDrv->getByte(s_auxCtx, &b) > 0) {
+      s_auxRxBytes++;
+      if (s_via == UE_VIA_AUX) { s_dec.feed(&b, 1); holderRx = true; } else s_sniffDec.feed(&b, 1);
+    }
+  }
+  while (s_rxTail != s_rxHead) {
+    b = s_rx[s_rxTail];
+    s_rxTail = (uint16_t)((s_rxTail + 1) % RX_RING);
+    if (s_via == UE_VIA_USB && usbUp) { s_dec.feed(&b, 1); holderRx = true; } else s_sniffDec.feed(&b, 1);
+  }
+  if (holderRx) s_viaLastRxMs = s_nowMs;
+}
+// Which transport carries the companion this tick. Returns false when neither is available (link released).
+// Rules (ADR-0057 Q-LINK "dynamic, USB first"):
+//   - nothing active: USB if a host is plugged in serial mode, else AUX; a valid frame on the other one moves it there;
+//   - AUX active: a USB host that talks takes over — but never while a model push is open (the op-lock rule);
+//     AUX silent for 3 s (phone out of range, ESP off) releases it;
+//   - USB active: AUX takes over only once USB has not been ATTACHED for 2 s (a host that went away without unplug).
+// ---- s52 R10 (ADR-0057 Q-RF; owner 2026-11-04: "a switch I choose") -------------------------------------------
+// While the pilot's switch is ON the wireless link is off: the AUX port's switched power is cut (TX16S PA15/PB0, so a
+// C3 powered from the port is fully off) and the C3 is told to stop its radio (LINK_RF frame, every 1 s, for a C3 on
+// its own supply). The switch is named in /UE/AUXARM.TXT with model.yml names: "SF2" (SF down), "!SA0", "L5"...;
+// re-read every 5 s, so it can be changed on the SD card without a reboot. No file = no switch (link always allowed).
+// s69 (ADR-0062 amendment, owner 2026-11-14: "always on at 2dB - no switch" by default, advanced users edit a file): the
+// switch and the C3's Bluetooth power live in /UE/WIRELESS.TXT (ue_wireless.h), which the radio writes itself with the
+// defaults (arm_switch=none, power_dbm=2) the first time, carrying over an old /UE/AUXARM.TXT switch; re-read every 5 s
+// as before. LINK_RF gains a second byte, the power: {u8 on, i8 dBm}. An older C3 reads only the first byte; a newer
+// C3 next to an older radio (1 byte) keeps the power in its own NVS.
+#include "ue_wireless.h"
+static const uint8_t MSG_LINK_RF = 0xE0;   // radio -> C3 only, never forwarded to the phone (provisional, research)
+extern swsrc_t ueParseSwitchName(const char* val, uint8_t len);
+static swsrc_t  s_armSw = SWSRC_NONE;
+static bool     s_armed = false, s_armRead = false;
+static uint32_t s_armReadMs = 0, s_rfSentMs = 0;
+static uint8_t  s_rfSeq = 0;
+static int8_t   s_rfDbm = uewl::DBM_DEFAULT;   // s69: power_dbm, sent to the C3 in LINK_RF
+static uint8_t  s_wlIssues = 0;                // s69: what the last read found wrong (TRACEd when it changes)
+static bool     s_wlEnsured = false;           // s69: the file's presence checked this boot
+// s69: a model.yml switch name the arm switch can be (EdgeTX's mix/timer switch range); SWSRC_NONE when it isn't.
+static swsrc_t ueArmSwitchOf(const char* name, uint8_t len)
+{
+  if (!len) return SWSRC_NONE;
+  swsrc_t sw = ueParseSwitchName(name, len);
+  return (sw >= SWSRC_FIRST_IN_MIXES && sw <= SWSRC_LAST_IN_MIXES) ? sw : SWSRC_NONE;
+}
+// s69: the first time (SD card mounted, not handed to a computer), write /UE/WIRELESS.TXT with the defaults and a note per
+// option, on a radio where it does something (an AUX1 port, or a bay build). Never over an existing file (FA_CREATE_NEW):
+// the pilot's edits stay. An old /UE/AUXARM.TXT switch (s52) is carried over; that file is left as it is.
+// Menus task only (the companion tick), never the 10 ms timer or an ISR.
+static void ueWirelessFileEnsure()
+{
+  if (s_wlEnsured || !sdMounted() || usbPluggedInStorageMode()) return;
+  s_wlEnsured = true;
+#if !defined(UE_BAYLINK)
+  if (!ueAux1Exists()) return;   // no AUX1 port (the stock QX7): no wireless link, no file
+#endif
+  FILINFO fi;
+  if (f_stat(uewl::FILE_PATH, &fi) == FR_OK) return;
+  char old[24]; UINT n = 0; uint8_t l = 0;
+  FIL f;
+  if (f_open(&f, uewl::OLD_ARM_PATH, FA_OPEN_EXISTING | FA_READ) == FR_OK) {
+    if (f_read(&f, old, sizeof(old) - 1, &n) != FR_OK) n = 0;
+    f_close(&f);
+    while (l < n && (uint8_t)old[l] > ' ') l++;   // s52's reading: the first word
+    if (l && ueArmSwitchOf(old, l) == SWSRC_NONE) { TRACE("UE wireless: AUXARM.TXT switch not known, not carried over"); l = 0; }
+  }
+  old[l] = 0;
+  char line[32];
+  uint8_t ln = uewl::armLine(old, line, sizeof(line));
+  if (!ln) ln = uewl::armLine("", line, sizeof(line));
+  f_mkdir("/UE");
+  if (f_open(&f, uewl::FILE_PATH, FA_CREATE_NEW | FA_WRITE) != FR_OK) { TRACE("UE wireless: WIRELESS.TXT not written"); return; }
+  UINT w = 0, wt = 0;
+  f_write(&f, uewl::FILE_HEAD, sizeof(uewl::FILE_HEAD) - 1, &w); wt += w;
+  f_write(&f, line, ln, &w); wt += w;
+  f_write(&f, uewl::FILE_TAIL, sizeof(uewl::FILE_TAIL) - 1, &w); wt += w;
+  f_close(&f);
+  TRACE("UE wireless: WIRELESS.TXT written (%u bytes, arm_switch %s)", (unsigned)wt, l ? old : "none");
+}
+static void ueArmReload()
+{
+  uewl::Reader r;
+  FIL f;
+  if (f_open(&f, uewl::FILE_PATH, FA_OPEN_EXISTING | FA_READ) == FR_OK) {
+    char buf[64]; UINT n = 0; uint16_t total = 0;
+    while (total < uewl::MAX_READ && f_read(&f, buf, sizeof(buf), &n) == FR_OK && n) { r.feed(buf, n); total += n; }
+    f_close(&f);
+  }
+  r.end();   // no file: the defaults (no switch, 2 dBm)
+  swsrc_t sw = ueArmSwitchOf(r.s.arm, r.s.armLen);
+  uint8_t issues = r.s.issues | ((r.s.armLen && sw == SWSRC_NONE) ? uewl::ISSUE_BAD_ARM : 0);
+  if (issues != s_wlIssues) TRACE("UE wireless: WIRELESS.TXT issues 0x%02x (defaults used for those)", (unsigned)issues);
+  s_wlIssues = issues;
+  if (sw != s_armSw) TRACE("UE link: arm switch %d", (int)sw);
+  s_armSw = sw;
+  if (r.s.dbm != s_rfDbm) {
+    TRACE("UE link: C3 power %d dBm", (int)r.s.dbm);
+    s_rfDbm = r.s.dbm;
+    s_rfSentMs = s_nowMs - 1000;   // tell the C3 now
+  }
+}
+static void ueAuxPower(bool on)
+{
+#if defined(UE_BAYLINK)
+  if (s_route == UE_ROUTE_BAY) {   // s61: the bay supply is the radio's own switch (only while UE holds the bay)
+    if (s_bay) modulePortSetPower(EXTERNAL_MODULE, on ? 1 : 0);
+    return;
+  }
+#endif
+  int nr = serialGetModePort(UART_MODE_ULTRAEDGE);
+  const etx_serial_port_t* port = nr >= 0 ? serialGetPort((uint8_t)nr) : nullptr;
+  if (port && port->set_pwr) port->set_pwr(on && serialGetPower((uint8_t)nr) ? 1 : 0);   // never persisted
+}
+// Before arbitration: is the pilot's switch on? Returns true while armed (the AUX transport is then unavailable).
+static bool ueArmTick()
+{
+  ueWirelessFileEnsure();   // s69: once per boot
+  if (!s_auxDrv) { s_armed = false; return false; }
+  if (!s_armRead || (uint32_t)(s_nowMs - s_armReadMs) >= uewl::RELOAD_MS) { ueArmReload(); s_armRead = true; s_armReadMs = s_nowMs; }
+  bool armed = s_armSw != SWSRC_NONE && getSwitch(s_armSw);
+  if (armed != s_armed) {
+    s_armed = armed;
+    ueAuxPower(!armed);
+    s_rfSentMs = s_nowMs - 1000;   // tell the C3 now
+    TRACE("UE link: %s", armed ? "armed - wireless off" : "disarmed - wireless on");
+  }
+  return armed;
+}
+// After arbitration (which may have emptied the AUX ring): keep the C3's radio state current, then flush.
+// s72 (owner D-BAY-5, ADR-0064 "held by USB"): LINK_RF gains a third byte, flags. bit0 = a USB cable holds the
+// companion (the app on the cable is attached), so the phone on Bluetooth knows why the radio went quiet: the C3 tells it
+// (frame 0xE9 to the phone, wireless/esp32c3-bridge). Sent at once when it changes. Older C3s read only bytes 0-1.
+static const uint8_t UE_RF_F_USB_HELD = 0x01;
+static uint8_t s_rfFlags = 0;
+static void ueRfKeepalive()
+{
+  uint8_t flags = (s_via == UE_VIA_USB && s_companionActive && getSelectedUsbMode() == USB_SERIAL_MODE && usbStarted())
+                  ? UE_RF_F_USB_HELD : 0;
+  if (flags != s_rfFlags) {
+    s_rfFlags = flags;
+    s_rfSentMs = s_nowMs - 1000;   // tell the C3 now
+    TRACE("UE link: %s", flags ? "USB cable holds the companion (C3 told)" : "USB no longer holds the companion");
+  }
+  if (s_auxDrv && (uint32_t)(s_nowMs - s_rfSentMs) >= 1000) {
+    uint8_t p[3] = { (uint8_t)(s_armed ? 0 : 1), (uint8_t)s_rfDbm, s_rfFlags }, f[24];   // s69: power; s72: flags
+    size_t n = encodeFrame(MSG_LINK_RF, s_rfSeq++, p, 3, f, sizeof(f));
+    for (size_t i = 0; i < n; ++i) {   // straight into the AUX ring, whichever transport holds the companion
+      uint16_t next = (uint16_t)((s_auxTxHead + 1) % AUX_TX_RING);
+      if (next == s_auxTxTail) break;
+      s_auxTx[s_auxTxHead] = f[i]; s_auxTxHead = next;
+    }
+    s_rfSentMs = s_nowMs;
+  }
+  auxFlush();
+}
+extern "C" bool ueAuxLinkArmed() { return s_armed; }
+
+static bool ueAuxLinkTransport()
+{
+  ueRouteTick();   // s61/s71: which port is the "AUX" transport this tick (AUX1, the bay, or none)
+  bool armed = ueArmTick();
+  bool usbUp = getSelectedUsbMode() == USB_SERIAL_MODE && usbStarted();
+  // USB Mass Storage hands the SD card to the computer: the companion (SD pulls, model pushes) must not touch it,
+  // whichever transport it is on. Stock UltraEdge never runs then (USB serial only); the AUX link must not either.
+  bool auxUp = s_auxDrv != nullptr && !usbPluggedInStorageMode() && !armed;
+  if (!usbUp && s_cbSet) {   // USB gone: give plain Serial its stock consumer back (docs/29 release path)
+    usbSerialSetReceiveDataCb(nullptr, s_prevRxCb);
+    s_prevRxCb = nullptr;
+    s_cbSet = false;
+  }
+  if (!usbUp && !auxUp) {
+    if (s_inited || s_companionActive) ueLinkRelease();
+    s_via = UE_VIA_USB;
+    ueRfKeepalive();
+    return false;
+  }
+  static bool sniffInit = false;
+  if (!sniffInit) { s_sniffDec.reset(); s_sniffDec.setCallback(onSniff, nullptr); sniffInit = true; }
+  if (s_via == UE_VIA_USB && !usbUp) ueSwitchVia(UE_VIA_AUX);
+  else if (s_via == UE_VIA_AUX && !auxUp) ueSwitchVia(UE_VIA_USB);
+  else if (s_via == UE_VIA_AUX) {
+    bool silent = s_companionActive && (uint32_t)(s_nowMs - s_viaLastRxMs) >= 3000;
+    if (usbUp && s_sniffWants && !s_pushActive) ueSwitchVia(UE_VIA_USB);
+    else if (silent) { ueLinkRelease(); TRACE("UE link: AUX silent 3 s, released"); }
+    else if (!s_companionActive && usbUp && (uint32_t)(s_nowMs - s_viaLastRxMs) >= 1000)
+      ueSwitchVia(UE_VIA_USB);   // AUX idle for 1 s: listen on USB first again (the grace keeps a starting AUX session)
+  } else if (auxUp && s_sniffWants) {   // holder USB, a phone talks on AUX
+    if (s_companionActive && s_link.state() != LINK_ATTACHED) s_viaNotAttachedMs += 10; else s_viaNotAttachedMs = 0;
+    if (!s_companionActive || (s_viaNotAttachedMs >= 2000 && !s_pushActive)) ueSwitchVia(UE_VIA_AUX);
+    else s_sniffWants = false;   // USB host is attached: keep it; look again on the next frame
+  }
+  if (usbUp && !s_cbSet) {
+    void (*cur)(uint8_t*, uint32_t) = usbSerialGetReceiveDataCb();
+    if (cur != ultraedgeCompanionRxCb) s_prevRxCb = cur;
+    usbSerialSetReceiveDataCb(nullptr, ultraedgeCompanionRxCb);
+    s_cbSet = true;
+  }
+  ueRfKeepalive();
+  return true;
+}
+extern "C" void ueAuxLinkStats(uint32_t* tx, uint32_t* rx, uint8_t* via) { *tx = s_auxTxBytes; *rx = s_auxRxBytes; *via = s_via; }
+
+#if defined(UE_BAYLINK)
+// ---- s61 (ADR-0064, prototype): the companion link in the external module bay -----------------------------------
+// Owner decisions D-BAY-1..7 (2026-11-11): radio-level route inside s52 (not a model module type), the route in an SD
+// file under /UE/, USB takes over (s52's "USB first" arbitration, unchanged), the Connect: line on the companion
+// screen, and the link stays up when armed (s52 cuts it only if the pilot names a switch in /UE/AUXARM.TXT).
+// The bay is the model's first: UE claims it only while the current model has no external RF module and no bay
+// trainer, and hands it back before pulses starts one (ueBayYieldRequest, called from the mixer task). Claim and
+// release run in the main task only (RTOS: no port work in the 10 ms timer callback).
+#if defined(UE_BAY_HD)
+// ---- s62: UE-HD, the radio end (bus master) ------------------------------------------------------------------------
+// The bus runs in its own small task ("uehd", 1 ms loop, real clock): the companion tick is a catch-up loop inside the
+// 50 ms menus task (main.cpp), which would give one cycle per 50 ms and virtual timeouts. Never in the mixer timer
+// callback, no SD/USB work here: the task only moves bytes between two rings and the S.Port UART. One cycle = one
+// frame out, the C3's one reply back (or a timeout), then the next frame. The QX7's S.Port UART has no RX DMA and a
+// 128-byte FIFO (TELEMETRY_FIFO_SIZE), so our CREDIT caps a C3 reply at 112 payload bytes (117 on the wire).
+// Main task <-> uehd task: two single-producer/single-consumer rings (s52 writes s_hdTx and reads s_hdRx); the port,
+// start and stop are handed over under s_hdMtx.
+#define UE_BAY_ROUTE_NAME "S.Port UE-HD"
+static const uint16_t HD_RING = 1024;
+// s67 (owner 2026-11-14, "Bigger save blocks over the bay"): the receive ring holds a whole 4 KB app push window, so
+// one menus-task drain takes it all. In main SRAM (__DMA = .ram): the Pocket's .bss lives in its 64 KB CCM, nearly full.
+static const uint16_t HD_RX_RING = 4096;
+static uint8_t  s_hdTx[HD_RING];
+static uint8_t  s_hdRx[HD_RX_RING] __DMA;
+static volatile uint16_t s_hdTxH = 0, s_hdTxT = 0, s_hdRxH = 0, s_hdRxT = 0;
+static mutex_handle_t s_hdMtx;
+static task_handle_t s_hdTaskId;
+TASK_DEFINE_STACK(s_hdStack, 256);
+static bool s_hdTaskMade = false;
+static volatile bool s_hdRun = false;
+static uehd_ep_t     s_hdEp;
+static uehd_parser_t s_hdPar;
+static uint8_t  s_hdCyc[160];        // this cycle's reply bytes (a reply is at most 117)
+static uint16_t s_hdCycN = 0;
+// TX DMA source (the S.Port USART's DMA1 stream), kept until sent. s74 (radio day P-B1, Pocket "Bay: no C3 answer"):
+// __DMA puts it in main SRAM. Plain .bss is CCM on an STM32F407 (Pocket, Zorro); DMA1 can't read CCM, so not one
+// HELLO reached the wire. The QX7 (STM32F205, no CCM) never showed it.
+static uint8_t  s_hdFrame[UEHD_MAX + UEHD_OVERHEAD] __DMA;
+static uint32_t s_hdBaud = 460800;
+static volatile bool s_hdUp = false, s_hdBadVer = false;
+static bool     s_hdWait = false;
+static uint32_t s_hdSentMs = 0, s_hdTimeoutMs = 0, s_hdHuntMs = 0;
+static uint16_t s_hdMiss = 0;
+static uint8_t  s_hdPeerCredit = 0;
+static uint32_t s_hdCycles = 0, s_hdMisses = 0, s_hdDowns = 0;
+static uint32_t s_hdTxFrames = 0, s_hdRxBytes = 0;
+static int8_t   s_hdDirAfterSend = -1;   // s76: TELEMETRY_DIR_GPIO read just after a send (-1: this radio has none)
+#if defined(TELEMETRY_DIR_GPIO)
+#include "hal/gpio.h"     // s76: gpio_read
+#include "stm32_gpio.h"   // s76: GPIO_PIN (TELEMETRY_DIR_GPIO)
+#endif   // s74: frames handed to the UART, bytes heard back (any, even junk)
+static etx_serial_driver_t s_hdDrv;  // what s52 talks to: byte rings in, frames out
+static uint16_t hdUsed(uint16_t h, uint16_t t, uint16_t size = HD_RING) { return (uint16_t)((h + size - t) % size); }
+static void hdPut(uint8_t* r, volatile uint16_t* h, uint16_t t, uint8_t b, uint16_t size = HD_RING)
+{
+  uint16_t n = (uint16_t)((*h + 1) % size);
+  if (n != t) { r[*h] = b; __asm__ volatile("" ::: "memory"); *h = n; }   // data before index (SPSC)
+}
+static void hdSendBuffer(void*, const uint8_t* d, uint32_t n) { for (uint32_t i = 0; i < n; ++i) hdPut(s_hdTx, &s_hdTxH, s_hdTxT, d[i]); }
+static void hdSendByte(void*, uint8_t b) { hdPut(s_hdTx, &s_hdTxH, s_hdTxT, b); }
+// s52's auxFlush moves up to 384 bytes at a time, only when the previous chunk "went out": here, when it fits.
+static bool hdTxCompleted(void*) { return HD_RING - 1 - hdUsed(s_hdTxH, s_hdTxT) >= 384; }
+static int hdGetByte(void*, uint8_t* b)
+{
+  if (s_hdRxT == s_hdRxH) return 0;
+  *b = s_hdRx[s_hdRxT]; __asm__ volatile("" ::: "memory"); s_hdRxT = (uint16_t)((s_hdRxT + 1) % HD_RX_RING);
+  return 1;
+}
+static void hdClearRx(void*) { s_hdRxT = s_hdRxH; }
+static const etx_serial_driver_t* ueBayLinkDrv() { return &s_hdDrv; }
+static void ueHdPump();
+static void ueHdTask()
+{
+  for (;;) {
+    mutex_lock(&s_hdMtx);
+    if (s_hdRun) ueHdPump();
+    mutex_unlock(&s_hdMtx);
+    sleep_ms(1);
+  }
+}
+// Main task: after the S.Port port is open (ueBayClaim).
+static void ueHdStart()
+{
+  if (!s_hdTaskMade) {
+    mutex_create(&s_hdMtx);
+    task_create(&s_hdTaskId, ueHdTask, "uehd", s_hdStack, 256, MENUS_TASK_PRIO + 1);
+    s_hdTaskMade = true;
+  }
+  mutex_lock(&s_hdMtx);
+  memset(&s_hdDrv, 0, sizeof(s_hdDrv));
+  s_hdDrv.sendBuffer = hdSendBuffer; s_hdDrv.sendByte = hdSendByte; s_hdDrv.txCompleted = hdTxCompleted;
+  s_hdDrv.getByte = hdGetByte; s_hdDrv.clearRxBuffer = hdClearRx;
+  memset(&s_hdEp, 0, sizeof(s_hdEp));
+  uehd_parser_init(&s_hdPar, UEHD_SYNC_C2R);
+  s_hdTxH = s_hdTxT = s_hdRxH = s_hdRxT = 0;
+  s_hdUp = s_hdWait = s_hdBadVer = false;
+  s_hdCycN = 0; s_hdMiss = 0; s_hdPeerCredit = 0;
+  s_hdHuntMs = time_get_ms();
+  s_hdRun = true;
+  mutex_unlock(&s_hdMtx);
+}
+// Main task: before the port closes (ueBayRelease), or while armed. After it returns the task no longer touches the port.
+static void ueHdStop()
+{
+  if (!s_hdTaskMade) return;
+  mutex_lock(&s_hdMtx);
+  s_hdRun = false; s_hdUp = false; s_hdWait = false;
+  mutex_unlock(&s_hdMtx);
+}
+// Main task: bus running again after an armed spell (the port stayed open).
+static void ueHdResume()
+{
+  if (!s_hdTaskMade || s_hdRun) return;
+  mutex_lock(&s_hdMtx);
+  uehd_parser_init(&s_hdPar, UEHD_SYNC_C2R);
+  s_hdCycN = 0; s_hdMiss = 0; s_hdHuntMs = time_get_ms();
+  s_hdRun = true;
+  mutex_unlock(&s_hdMtx);
+}
+static void hdReply()
+{
+  const uehd_parser_t& p = s_hdPar;
+  s_hdPeerCredit = p.credit;
+  if (p.ctrl & UEHD_F_HELLO) {
+    if (s_hdUp) return;
+    if (p.len >= 1 && p.buf[0] == UEHD_VERSION) {
+      uehd_ep_reset(&s_hdEp);
+      s_hdUp = true; s_hdBadVer = false;
+      TRACE("UE link: bay C3 answers (UE-HD v%d, %lu baud)", UEHD_VERSION, (unsigned long)s_hdBaud);
+    } else {
+      s_hdBadVer = true;   // "Bay C3: update": never start the link on another version
+    }
+    return;
+  }
+  if (!s_hdUp) return;
+  if (uehd_ep_on_frame(&s_hdEp, p.ctrl, p.len))
+    for (uint8_t i = 0; i < p.len; ++i) hdPut(s_hdRx, &s_hdRxH, s_hdRxT, p.buf[i], HD_RX_RING);   // our CREDIT kept room for it
+}
+static void ueHdPump()   // uehd task, s_hdMtx held
+{
+  uint32_t now = time_get_ms();
+  uint8_t b;
+  while (s_bayDrv->getByte(s_bayCtx, &b) > 0) {
+    s_hdRxBytes++;
+    if (s_hdCycN < sizeof(s_hdCyc)) s_hdCyc[s_hdCycN++] = b;
+  }
+  if (s_hdWait) {
+    if (s_hdCycN && uehd_parse_burst(&s_hdPar, s_hdCyc, s_hdCycN)) {
+      s_hdWait = false; s_hdMiss = 0; s_hdCycles++;
+      hdReply();
+    } else if ((uint32_t)(now - s_hdSentMs) >= s_hdTimeoutMs) {
+      s_hdWait = false; s_hdMisses++;
+      if (s_hdUp && ++s_hdMiss >= 50) {   // 0.5 s of silence: the C3 is gone (or rebooted): HELLO again
+        s_hdUp = false; s_hdDowns++; s_hdHuntMs = now;
+        TRACE("UE link: bay C3 silent, UE-HD down");
+      }
+    } else {
+      return;   // the reply is still on the wire
+    }
+  }
+  if (s_bayDrv->txCompleted && !s_bayDrv->txCompleted(s_bayCtx)) return;
+  if (!s_hdUp && (uint32_t)(now - s_hdHuntMs) >= 1500) {   // no answer: try the next rate (slow S.Port inverters)
+    // s66 (owner 2026-11-13, "Tune Bluetooth + try 230400 together"): 460800 -> 230400 -> 115200, the C3's order
+    // (uehd_lock.h). The QX7's inverter loses the C3's replies at 460800; 230400 may pass, at twice 115200's rate.
+    s_hdBaud = s_hdBaud == 460800 ? 230400 : s_hdBaud == 230400 ? 115200 : 460800;
+    if (s_bayDrv->setBaudrate) s_bayDrv->setBaudrate(s_bayCtx, s_hdBaud);
+    s_hdHuntMs = now;
+  }
+  uint16_t room = (uint16_t)(HD_RX_RING - 1 - hdUsed(s_hdRxH, s_hdRxT, HD_RX_RING));
+  if (room > 112) room = 112;                       // the 128-byte UART FIFO between two ticks
+  uint8_t credit = (uint8_t)(room / 16);
+  unsigned n;
+  if (!s_hdUp) {
+    n = uehd_encode(UEHD_SYNC_R2C, UEHD_F_HELLO, credit, nullptr, 0, s_hdFrame);
+  } else {
+    if (!s_hdEp.pendLen) {
+      uint16_t cap = (uint16_t)(s_hdPeerCredit * 16u);
+      if (cap > UEHD_MAX) cap = UEHD_MAX;
+      while (s_hdEp.pendLen < cap && s_hdTxT != s_hdTxH) {
+        s_hdEp.pend[s_hdEp.pendLen++] = s_hdTx[s_hdTxT];
+        s_hdTxT = (uint16_t)((s_hdTxT + 1) % HD_RING);
+      }
+    } else {
+      s_hdEp.resent++;
+    }
+    n = uehd_encode(UEHD_SYNC_R2C, uehd_ep_ctrl(&s_hdEp), credit, s_hdEp.pend, s_hdEp.pendLen, s_hdFrame);
+  }
+  if (s_bayDrv->clearRxBuffer) s_bayDrv->clearRxBuffer(s_bayCtx);   // nothing from before this frame counts
+  s_hdCycN = 0;
+  s_bayDrv->sendBuffer(s_bayCtx, s_hdFrame, n);
+  s_hdTxFrames++;
+#if defined(TELEMETRY_DIR_GPIO)
+  s_hdDirAfterSend = (int8_t)gpio_read(TELEMETRY_DIR_GPIO);   // s76: the half-duplex direction pin, right after a send
+#endif
+  s_hdWait = true;
+  s_hdSentMs = now;
+  // our frame + the longest reply our credit allows + the C3's turnaround (it answers within ~1-2 ms) + 1 ms slack
+  s_hdTimeoutMs = uehd_air_ms(n, s_hdBaud) + uehd_air_ms(UEHD_OVERHEAD + credit * 16u, s_hdBaud) + 4;
+}
+extern "C" void ueBayHdStats(uint32_t* baud, uint32_t* cycles, uint32_t* misses, uint32_t* downs, uint32_t* crcErr)
+{
+  *baud = s_hdUp ? s_hdBaud : 0; *cycles = s_hdCycles; *misses = s_hdMisses; *downs = s_hdDowns; *crcErr = s_hdPar.crcErr;
+}
+// s74 (radio day P-B1, diagnostics first): /UE/BAYHD.TXT, the radio end of the bay bus, rewritten every 5 s while the
+// bay route holds the port. Main task (ueRouteTick), never the uehd task: SD work stays out of the bus loop. One line:
+// tx = frames handed to the S.Port UART, rxb = bytes heard back (any), ok = valid C3 replies, miss = timeouts,
+// crc = bad replies, frame = the TX DMA buffer's address (0x2... main SRAM; 0x1... is CCM, which DMA can't read).
+#include <cstdio>    // snprintf
+#include <cstdint>   // uintptr_t
+static uint32_t s_hdTraceMs = 0;
+// s76 (RC7 hardening): dma = 1 when s_hdFrame passes the same test the STM32 serial driver applies before it uses TX
+// DMA (inside the DMA-capable .ram section and 4-byte aligned); 0 means the driver would fall back to interrupts, or
+// on a port with DMA only, never send. The raw address alone ("0x2..." = main SRAM) is not that test.
+#if defined(STM32F4)
+extern uint32_t _sram;
+extern uint32_t _eram;
+static int ueHdFrameDma()
+{
+  intptr_t a = (intptr_t)s_hdFrame;
+  return (a >= (intptr_t)&_sram && a <= (intptr_t)&_eram && (a & 3) == 0) ? 1 : 0;
+}
+#elif defined(STM32H7) || defined(STM32H7RS)
+extern uint32_t _s_dram;
+extern uint32_t _e_dram;
+static int ueHdFrameDma()
+{
+  intptr_t a = (intptr_t)s_hdFrame;
+  return (a >= (intptr_t)&_s_dram && a <= (intptr_t)&_e_dram && (a & 3) == 0) ? 1 : 0;
+}
+#else
+static int ueHdFrameDma() { return (((intptr_t)s_hdFrame) & 3) == 0 ? 1 : 0; }   // F2: no CCM, any SRAM works
+#endif
+static void ueBayHdTrace()
+{
+  if ((uint32_t)(s_nowMs - s_hdTraceMs) < 5000) return;
+  s_hdTraceMs = s_nowMs;
+  char line[200];
+  int n = snprintf(line, sizeof(line),
+                   "BAYHD v2 t=%lu up=%d ver=%s baud=%lu tx=%lu rxb=%lu ok=%lu miss=%lu downs=%lu crc=%lu run=%d frame=%08lx dma=%d dir=%d\n",
+                   (unsigned long)s_nowMs, s_hdUp ? 1 : 0, s_hdBadVer ? "bad" : "ok", (unsigned long)s_hdBaud,
+                   (unsigned long)s_hdTxFrames, (unsigned long)s_hdRxBytes, (unsigned long)s_hdCycles,
+                   (unsigned long)s_hdMisses, (unsigned long)s_hdDowns, (unsigned long)s_hdPar.crcErr, s_hdRun ? 1 : 0,
+                   (unsigned long)(uintptr_t)s_hdFrame, ueHdFrameDma(), (int)s_hdDirAfterSend);
+  FIL f; UINT w = 0;
+  if (n <= 0 || f_open(&f, "/UE/BAYHD.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) return;
+  f_write(&f, line, (UINT)(n < (int)sizeof(line) ? n : (int)sizeof(line) - 1), &w);
+  f_close(&f);
+}
+#else
+#define UE_BAY_ROUTE_NAME "460800"
+static const etx_serial_driver_t* ueBayLinkDrv() { return s_bayDrv; }
+#endif
+
+static uint8_t ueBayBlockReason()
+{
+  uint8_t tm = g_model.trainerData.mode;
+  return uebay::bayBlock(g_model.moduleData[EXTERNAL_MODULE].type != MODULE_TYPE_NONE,
+                         moduleState[EXTERNAL_MODULE].protocol != PROTOCOL_CHANNELS_NONE,   // pulses hasn't let go yet
+                         tm == TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE || tm == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE
+#if defined(UE_BAY_HD_INT_SPORT)   // s62/s72: an internal XJT (QX7) runs its telemetry on the S.Port UART
+                         , g_model.moduleData[INTERNAL_MODULE].type == MODULE_TYPE_XJT_PXX1 ||
+                           moduleState[INTERNAL_MODULE].protocol == PROTOCOL_CHANNELS_PXX1
+#endif
+                         );
+}
+static void ueBayRelease()
+{
+  if (!s_bay) return;
+#if defined(UE_BAY_HD)
+  ueHdStop();   // s62: the uehd task lets go of the port before it closes
+#endif
+  if (s_auxDrv && s_auxDrv == ueBayLinkDrv()) {
+    if (s_via == UE_VIA_AUX) { ueLinkRelease(); s_via = UE_VIA_USB; }
+    s_auxCtx = nullptr; s_auxDrv = nullptr;
+  }
+  etx_module_state_t* st = s_bay;
+  modulePortDeInit(st);
+  modulePortSetPower(EXTERNAL_MODULE, 0);
+  s_bayCtx = nullptr; s_bayDrv = nullptr;
+  __asm__ volatile("" ::: "memory");
+  s_bay = nullptr;   // last: the pulses hook stops yielding only once the port is closed and unpowered
+  TRACE("UE link: bay released");
+}
+static bool ueBayClaim()
+{
+  etx_serial_init p;
+  memset(&p, 0, sizeof(p));
+  p.encoding = ETX_Encoding_8N1;
+  p.direction = ETX_Dir_TX_RX;
+#if defined(UE_BAY_HD)
+  p.baudrate = s_hdBaud;            // s62: the last rate the C3 answered on (460800 first, 115200 for a slow inverter)
+  p.polarity = ETX_Pol_Normal;      // the radio's own S.Port inverter (if any) stays as EdgeTX sets it; the C3 probes
+  etx_module_state_t* st = modulePortInitSerial(EXTERNAL_MODULE, ETX_MOD_PORT_SPORT, &p, false);
+#else
+  p.baudrate = 460800;              // = UE_AUX_BAUDRATE (serial.cpp): the C3 bridge's default
+  p.polarity = ETX_Pol_Normal;      // idle high at the pin: what the C3 bridge's pin probe expects
+  etx_module_state_t* st = modulePortInitSerial(EXTERNAL_MODULE, ETX_MOD_PORT_UART, &p, false);
+#endif
+  if (!st || !st->rx.port || !st->rx.ctx) {
+    if (st) modulePortDeInit(st);
+    TRACE("UE link: bay port init failed");
+    return false;
+  }
+  s_bayCtx = st->rx.ctx;
+  s_bayDrv = st->rx.port->drv.serial;
+  modulePortSetPower(EXTERNAL_MODULE, s_armed ? 0 : 1);
+  if (s_bayDrv->clearRxBuffer) s_bayDrv->clearRxBuffer(s_bayCtx);
+#if defined(UE_BAY_HD)
+  ueHdStart();
+#endif
+  s_bay = st;
+  TRACE("UE link: bay claimed (%s, powered)", UE_BAY_ROUTE_NAME);
+  return true;
+}
+// Mixer task (pulses), before it starts an external module: true = "not yet, UE still holds the bay".
+bool ueBayYieldRequest()
+{
+  if (!s_bay) return false;
+  s_bayYieldReq = true;
+  return true;
+}
+// Main task (checkTrainerSettings): a bay trainer is about to start.
+void ueBayYieldNow() { ueBayRelease(); s_bayBlock = 2; }
+#endif   // UE_BAYLINK (the bay itself; the route and the Connect: line below are in every AUXLINK image, s71)
+
+#if defined(UE_BAYLINK)
+static const bool UE_BAY_BUILT = true;
+#else
+static const bool UE_BAY_BUILT = false;
+#endif
+static void ueRouteLoad()
+{
+  if (s_routeLoaded || !sdMounted()) return;
+  s_routeLoaded = true;
+  FIL f; char b[8]; UINT n = 0;
+  if (f_open(&f, "/UE/LINK.TXT", FA_OPEN_EXISTING | FA_READ) == FR_OK) {
+    if (f_read(&f, b, sizeof(b) - 1, &n) != FR_OK) n = 0;
+    f_close(&f);
+    s_routeSaved = uebay::routeInBuild(uebay::parseRoute(b, n), UE_BAY_BUILT);   // s71: "BAY" in a release image = AUX
+  }
+  s_route = s_routeSaved;
+  TRACE("UE link: route %d (LINK.TXT %s)", (int)s_route, n ? "read" : "absent");
+}
+extern "C" bool ueRouteSet(uint8_t r, bool save);
+extern "C" bool ueRouteSave(uint8_t r);
+static void ueRouteTick()
+{
+  ueRouteLoad();
+  void* ctx = nullptr;
+  const etx_serial_driver_t* drv = nullptr;
+#if defined(UE_BAYLINK)
+  if (s_routeReq != 0xFF) {   // s64: UE-BLE / Off from the External RF list, once the write's ACK is out
+    if (!s_routeReqAt) s_routeReqAt = (s_nowMs + 200) | 1;
+    else if ((int32_t)(s_nowMs - s_routeReqAt) >= 0) {
+      uint8_t r = s_routeReq; s_routeReq = 0xFF;
+      TRACE("UE link: route %d from the External RF list (UE-BLE)", (int)r);
+      ueRouteSet(r, true);
+    }
+  }
+  if (s_bayYieldReq) { ueBayRelease(); s_bayYieldReq = false; }
+  if (s_route == UE_ROUTE_BAY) {
+    uint8_t why = ueBayBlockReason();
+    if (why) { ueBayRelease(); s_bayBlock = why; }
+    else if (!s_bay && (int32_t)(s_nowMs - s_bayRetryMs) >= 0) {
+      s_bayBlock = ueBayClaim() ? 0 : 3;
+      if (s_bayBlock) s_bayRetryMs = s_nowMs + 2000;
+    }
+#if defined(UE_BAY_HD)
+    // s62: one UE-HD cycle per tick; s52 gets the link only while the C3 answers. Armed (the pilot's switch cut the
+    // bay power): no polling into an unpowered C3, and s52 keeps the port so its arm logic can power it up again.
+    if (s_bay && !s_armed) ueHdResume();
+    else if (s_bay) ueHdStop();
+    if (s_bay && (s_hdUp || s_armed)) { ctx = &s_hdEp; drv = &s_hdDrv; }
+    if (s_bay) ueBayHdTrace();   // s74
+#else
+    if (s_bay) { ctx = s_bayCtx; drv = s_bayDrv; }
+#endif
+  } else {
+    ueBayRelease();
+    s_bayBlock = 0;
+    if (s_route == UE_ROUTE_AUX) { ctx = s_serCtx; drv = s_serDrv; }
+  }
+#else
+  if (s_route == UE_ROUTE_AUX) { ctx = s_serCtx; drv = s_serDrv; }   // s71: USB chosen on the Connect: line = AUX idle
+#endif
+  if (drv != s_auxDrv) {
+    if (s_via == UE_VIA_AUX) ueSwitchVia(UE_VIA_USB);   // the companion was on the port that just went away
+    s_auxCtx = ctx; s_auxDrv = drv;
+    s_auxTxHead = s_auxTxTail = 0;
+  }
+}
+
+// ---- the Connect: line (s71: every image; gui/128x64/ui_companion_stubs.cpp, gui/colorlcd/radio/radio_setup.cpp) --
+extern "C" uint8_t ueRouteGet() { ueRouteLoad(); return s_route; }
+extern "C" uint8_t ueRouteSavedGet() { ueRouteLoad(); return s_routeSaved; }
+// BLE AUX is offered only when AUX1 exists and is in UltraEdge mode (owner D-BAY-6; s59 sets it from the app, SYS ›
+// Hardware on a colour radio). The Connect: line never changes the AUX1 mode itself.
+extern "C" bool ueAuxAvailable() { return ueAux1Exists() && serialGetMode(SP_AUX1) == UART_MODE_ULTRAEDGE; }
+// Main task (menus). save = also write /UE/LINK.TXT (ENTER long), radio-written, never radio.yml.
+extern "C" bool ueRouteSet(uint8_t r, bool save)
+{
+  r = uebay::routeInBuild(r, UE_BAY_BUILT);
+  if (r > UE_ROUTE_BAY) return false;
+  ueRouteLoad();
+  if (r != s_route) {
+    s_route = r;
+#if defined(UE_BAYLINK)
+    if (r != UE_ROUTE_BAY) ueBayRelease();
+    s_bayRetryMs = s_nowMs;
+#endif
+    TRACE("UE link: route now %d", (int)r);
+  }
+  if (!save) return true;
+  return ueRouteSave(r);
+}
+// s73: write /UE/LINK.TXT only, leaving the route in use alone (ENTER long on a pending Connect: choice saves it as the
+// Default; it applies after the pause like any ENTER). Main task (menus).
+extern "C" bool ueRouteSave(uint8_t r)
+{
+  r = uebay::routeInBuild(r, UE_BAY_BUILT);
+  if (r > UE_ROUTE_BAY) return false;
+  ueRouteLoad();
+  f_mkdir("/UE");
+  FIL f; UINT w = 0;
+  if (f_open(&f, "/UE/LINK.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) return false;
+  f_write(&f, uebay::routeWord(r), 4, &w);
+  f_close(&f);
+  if (w == 4) s_routeSaved = r;
+  return w == 4;
+}
+// For the status line: 0 on, no phone · 1 phone linked · 2 armed (pilot's switch) · 3 port not available
+// (AUX1 not UltraEdge / bay starting) · 4 the app is on USB · 5 bay: no C3 answers (s62) · 6 bay C3: other UE-HD
+// version (s62) · 11 bay used by model RF · 12 bay trainer · 13 port failed · 14 internal module shares S.Port (s62)
+extern "C" uint8_t ueWirelessStatus()
+{
+#if defined(UE_BAYLINK)
+  if (s_route == UE_ROUTE_BAY && s_bayBlock) return (uint8_t)(10 + s_bayBlock);
+#endif
+  if (s_armed) return 2;
+#if defined(UE_BAY_HD)
+  if (s_route == UE_ROUTE_BAY && s_bay && !s_hdUp) return s_hdBadVer ? 6 : 5;   // s62: no C3 answer yet / wrong UE-HD
+#endif
+  if (!s_auxDrv) return 3;
+  if (s_companionActive) return s_via == UE_VIA_AUX ? 1 : 4;
+  return 0;
+}
+
+#if defined(UE_BAYLINK)
+// s64 (ADR-0064 decision 10, owner 2026-11-13: "Yes, radio confirms"): picking a model on the radio while the bay
+// carries the Bluetooth link. If the model takes the bay (External RF, a bay trainer, or an internal XJT that shares
+// S.Port), the radio asks first. Main task (the model-select menu), blocking like EdgeTX's confirmModelChange.
+// Its model file is read line by line (uebay::ModelScan); an empty slot is a new model, External Off.
+// s72: the query is shared (ueBayModelAsk, by file path); the B&W screen below and the colour model list
+// (gui/colorlcd/model/model_select.cpp, a confirmationDialog) each ask in their own UI.
+static bool ueModelTakesBay(const char* path, bool& external)
+{
+  FIL f;
+  if (f_open(&f, path, FA_OPEN_EXISTING | FA_READ) != FR_OK) return false;
+  uebay::ModelScan sc;
+  char ln[96], buf[64]; uint8_t n = 0; bool skip = false; UINT got = 0;
+  while (f_read(&f, buf, sizeof(buf), &got) == FR_OK && got) {
+    for (UINT i = 0; i < got; ++i) {
+      char c = buf[i];
+      if (c == '\n') { if (!skip) { ln[n] = 0; sc.line(ln); } n = 0; skip = false; continue; }
+      if (n < sizeof(ln) - 1) ln[n++] = c; else skip = true;   // an over-long line (a long name) is not a key we need
+    }
+  }
+  if (n && !skip) { ln[n] = 0; sc.line(ln); }
+  f_close(&f);
+#if defined(UE_BAY_HD_INT_SPORT)
+  const bool intShares = true;
+#else
+  const bool intShares = false;
+#endif
+  external = sc.ext || sc.trainer;
+  return sc.takesBay(intShares);
+}
+// s72: the colour External RF list (gui/colorlcd/module/module_setup.cpp) shows and sets UE-BLE like the app (s64).
+extern "C" bool ueBleShownNow() { return ueBleShown(); }
+extern "C" void ueBleChoose(bool on)
+{
+  TRACE("UE link: UE-BLE %s from the radio's External RF list", on ? "on" : "off");
+  ueRouteSet(on ? UE_ROUTE_BAY : UE_ROUTE_USB, true);
+}
+// true = ask the pilot first: the bay carries the link now and the model at path takes it. external = why (else the
+// internal XJT on S.Port).
+extern "C" bool ueBayModelAsk(const char* path, bool* external)
+{
+  ueRouteLoad();
+  if (s_route != UE_ROUTE_BAY || !s_bay) return false;   // the bay isn't carrying the link
+  bool ext = true;
+  if (!ueModelTakesBay(path, ext)) return false;
+  if (external) *external = ext;
+  TRACE("UE link: model %s takes the bay, asking", path);
+  return true;
+}
+#if !defined(COLORLCD)
+extern "C" bool ueBayModelSwitchOk(uint8_t idx)
+{
+  char fn[MODELIDX_STRLEN + sizeof(YAML_EXT)], path[48];
+  getModelNumberStr(idx, fn); strcat(fn, YAML_EXT);
+  getModelPath(path, fn);
+  bool external = true;
+  if (!ueBayModelAsk(path, &external)) return true;
+  while (readKeys()) sleep_ms(20);                      // the ENTER that picked the model
+  bool ok = false;
+  for (;;) {
+    lcdClear();
+    lcdDrawText(0, 0, "MODEL SWITCH", INVERS);
+    lcdDrawText(0, 2 * FH, external ? "Model uses external" : "Model uses internal");
+    lcdDrawText(0, 3 * FH, "RF: Bluetooth link");
+    lcdDrawText(0, 4 * FH, "will stop.");
+    lcdDrawText(0, 6 * FH, "ENTER to continue");
+    lcdDrawText(0, 7 * FH, "EXIT to cancel");
+    lcdRefresh();
+    sleep_ms(20);
+    uint32_t k = readKeys();
+    if (k == (1 << KEY_ENTER)) { ok = true; break; }
+    if (k == (1 << KEY_EXIT)) break;
+  }
+  killEvents(ok ? KEY_ENTER : KEY_EXIT);
+  TRACE("UE link: model switch %s", ok ? "confirmed" : "cancelled");
+  return ok;
+}
+#endif
+#endif   // UE_BAYLINK
+#endif
+
+// s65 (ADR-0065 §11, owner 2026-11-12): sticks at 100 Hz for a tool that flies from them (the FPV simulator).
+// perMain() runs every 50 ms (MENU_TASK_PERIOD), so every stream in ultraedgeCompanionTick() reaches the phone in
+// 50 ms steps whatever rate was asked. When the app asks STREAM_SOURCES above 30 Hz, the menus task wakes every
+// 10 ms between its perMain() passes (tasks.cpp) and calls this: one small MSG_SOURCES frame with the sticks only.
+// Same task as every other companion TX, so frames never interleave; never waits for room (a frame that does not
+// fit is skipped); nothing here touches the mixer, the SD card or the model. Off unless asked: the app asks only
+// while such a tool runs (CAP_FAST_STICKS tells it this build answers).
+static uint32_t s_fastStickAtMs = 0;   // time_get_ms() of the last frame that carried the sticks
+extern "C" bool ueFastSticksWanted()
+{
+  return s_subSources.active && s_subSources.rateHz > 30 && s_link.companionInputAllowed();
+}
+extern "C" void ueFastSticksTick()
+{
+  if (!ueFastSticksWanted()) return;
+  uint32_t now = time_get_ms();
+  uint32_t every = 1000u / s_subSources.rateHz; if (every < 10) every = 10;
+  if (now - s_fastStickAtMs + 3 < every) return;   // 3 ms slack: the 10 ms wake-ups jitter by a tick or two
+  uint8_t sp[1 + MAX_STICKS * 4]; size_t so = 1;
+  for (uint16_t i = 0; i < MAX_STICKS; ++i) {
+    uint16_t mixsrc = (uint16_t)(MIXSRC_FIRST_STICK + i);
+    int32_t v = getValue((mixsrc_t)mixsrc);
+    if (v >  32767) v =  32767; if (v < -32768) v = -32768;
+    sp[so++] = mixsrc & 0xFF; sp[so++] = (mixsrc >> 8) & 0xFF; sp[so++] = v & 0xFF; sp[so++] = (v >> 8) & 0xFF;
+  }
+  sp[0] = (uint8_t)MAX_STICKS;
+  uint8_t f[2 * sizeof(sp) + 16];
+  size_t n = encodeFrame(MSG_SOURCES, s_seq, sp, (uint16_t)so, f, sizeof(f));
+  if (!n || UE_TXFREE() < n) return;
+  s_seq++; s_fastStickAtMs = now;
+  for (size_t i = 0; i < n; ++i) UE_PUTC(f[i]);
+}
+
 // Called from per10ms() (main context, ~100 Hz).
 extern "C" void ultraedgeCompanionTick()
 {
+#if defined(UE_AUXLINK)
+  ueAux1ApplyTick();   // s59: before the transport check, so turning the port off still completes
+  if (!ueAuxLinkTransport()) return;
+#else
   if (getSelectedUsbMode() != USB_SERIAL_MODE || !usbStarted()) {
     // Transport gone (unplug / mode change): release the link and RESTORE the stock Serial
     // consumer so plain Serial is byte-for-byte stock again (docs/29 release path).
@@ -3244,6 +4475,7 @@ extern "C" void ultraedgeCompanionTick()
     s_link.onTransportDown();
     return;
   }
+#endif
   if (s_appModMask && !s_link.companionInputAllowed()) ueStopAppModActions();   // s44: link lost without unplug
 
   UE_CRUMB(10);   // SERIAL mode + USB started: companion engaging
@@ -3256,6 +4488,7 @@ extern "C" void ultraedgeCompanionTick()
     s_inited = true;
   }
   UE_CRUMB(11);   // decoder/link initialised
+#if !defined(UE_AUXLINK)   // s52: ueAuxLinkTransport() installs the USB wrapper only while USB is up
   if (!s_cbSet) {
     // Capture whatever consumer EdgeTX already installed for Serial (CLI/Lua/telemetry),
     // then install our wrapper. We forward to the captured one until a HELLO arrives, so
@@ -3266,17 +4499,22 @@ extern "C" void ultraedgeCompanionTick()
     usbSerialSetReceiveDataCb(nullptr, ultraedgeCompanionRxCb);
     s_cbSet = true;
   }
+#endif
   UE_CRUMB(12);   // serial RX callback captured + swapped
 
   s_nowMs += 10;
 
+#if defined(UE_AUXLINK)
+  ueAuxDrainRx(getSelectedUsbMode() == USB_SERIAL_MODE && usbStarted());
+#else
   // Drain the ISR ring into the decoder.
   while (s_rxTail != s_rxHead) {
     uint8_t b = s_rx[s_rxTail];
     s_rxTail = (uint16_t)((s_rxTail + 1) % RX_RING);
     s_dec.feed(&b, 1);
   }
-  ueModelPushFlushAck();   // s53: one cumulative model-push ACK for every chunk this drain wrote
+#endif
+  ueModelPushFlushAck();   // s53: one cumulative model-push ACK for every chunk this drain wrote (USB or AUX)
   UE_CRUMB(13);   // RX ring drained into decoder (frames dispatched via onFrame)
 
   // Link heartbeat/timeout bookkeeping.
@@ -3304,7 +4542,11 @@ extern "C" void ultraedgeCompanionTick()
   if (++helloDiv >= 100) {
     helloDiv = 0;
     Hello h; h.proto_ver = PROTO_VERSION; h.fw_ver = 0x00040000;
-    h.role = ROLE_RADIO; h.caps = UE_LOCAL_CAPS;
+    h.role = ROLE_RADIO; h.caps = UE_LOCAL_CAPS
+#if defined(UE_AUXLINK)
+             | ueAuxModeCaps()   // s59: only a radio with an AUX1 port
+#endif
+             ;
     n = encodeHello(s_seq++, h, /*ack=*/false, f, sizeof(f));
     emitBytes(f, n);   // control class: not budget-limited
   }
@@ -3319,7 +4561,7 @@ extern "C" void ultraedgeCompanionTick()
         s_descLen = buildNextDescribe();
         if (s_descLen == 0) { s_descActive = false; break; }   // job complete
       }
-      if (usbSerialFreeSpace() >= s_descLen + 64) {
+      if (UE_TXFREE() >= s_descLen + 64) {
         emitBytes(s_descBuf, s_descLen);
         s_descLen = 0;
       } else {
@@ -3481,9 +4723,10 @@ extern "C" void ultraedgeCompanionTick()
   if (s_subSources.active) {
     s_subSources.accumMs += 10;
     uint16_t periodMs = (uint16_t)(1000 / s_subSources.rateHz);
-    if (periodMs < 33) periodMs = 33;   // up to 30 Hz
+    if (periodMs < 33) periodMs = 33;   // up to 30 Hz (s65: above that only the sticks go faster, ueFastSticksTick)
     if (s_subSources.accumMs >= periodMs) {
       s_subSources.accumMs = 0;
+      s_fastStickAtMs = time_get_ms();  // s65: the full frame carries the sticks too
       static uint8_t sp[1 + (MAX_STICKS + MAX_POTS + MAX_SWITCHES) * 4];
       size_t so = 1; uint16_t scnt = 0;
       auto emitSrc = [&](uint16_t mixsrc) {
@@ -3576,7 +4819,7 @@ extern "C" void ultraedgeCompanionTick()
       // s27: size the chunk so its frame fits BOTH the class-2 budget and the free USB TX room even if every byte
       // had to be escaped (frame <= 1 + 2*(5 + 8 + chunk + 2)); otherwise wait for the next tick — data is only
       // read from SD when it can be sent, so nothing is ever skipped.
-      uint32_t room = usbSerialFreeSpace(); if (room > s_class2Budget) room = s_class2Budget;
+      uint32_t room = UE_TXFREE(); if (room > s_class2Budget) room = s_class2Budget;
       uint32_t fit = room > 31 + 64 ? (room - 31) / 2 : 0;
       uint16_t want = fit < BULK_CHUNK ? (uint16_t)fit : BULK_CHUNK;
       if (want < 32 && s_bulkTotal - s_bulkOffset > want) break;   // too little room this tick
@@ -3596,7 +4839,7 @@ extern "C" void ultraedgeCompanionTick()
         p[o++] = br & 0xFF; p[o++] = (br >> 8) & 0xFF;
         for (UINT k = 0; k < br; ++k) p[o++] = chunk[k];
         n = encodeFrame(MSG_BULK_DATA, s_seq++, p, (uint16_t)o, f, sizeof(f));
-        for (size_t k = 0; k < n; ++k) usbSerialPutc(nullptr, f[k]);   // fits: sized above against free room
+        for (size_t k = 0; k < n; ++k) UE_PUTC(f[k]);   // fits: sized above against free room
         s_class2Budget -= (uint16_t)(n < s_class2Budget ? n : s_class2Budget);
         s_bulkOffset += br; bulkSent += (uint16_t)br;
       }

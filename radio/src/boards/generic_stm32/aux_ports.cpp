@@ -30,7 +30,12 @@
 #include "dataconstants.h"
 
 #define AUX_SERIAL_TX_BUFFER 512
-#if defined(SDRAM)
+#if defined(UE_AUXLINK)
+  // UltraEdge s52 (ADR-0057): the companion drains this port from the menus task (~50 ms worst case), so it holds a
+  // burst: the phone keeps <= 1.5 KB of a model push unacknowledged (CAP_AUX_WINDOW), 512 B stay for other frames.
+  // Power of two (DMA ring index mask).
+  #define AUX_SERIAL_RX_BUFFER 2048
+#elif defined(SDRAM)
   #define AUX_SERIAL_RX_BUFFER 512
 #else
   #define AUX_SERIAL_RX_BUFFER 32
