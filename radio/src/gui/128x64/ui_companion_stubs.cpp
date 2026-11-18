@@ -29,8 +29,73 @@
 // --- every removed screen lands HERE (owner field test 2026-10-12: the radio-menu key called a null handler and
 // rebooted; model-select page keys / statistics / telemetry opened blank screens with no way out). One small
 // screen that says where the settings are and always lets EXIT go back. ---
+#if !defined(UE_USBNET)
+// s61 -> s71 (owner D-BAY-5/6, 2026-11-11; every image since s71, not only the bay build): the title stays ULTRAEDGE; one
+// "Connect:" line chooses where the app connects: USB UltraEdge / USB Joystick / USB SD card / BLE bay / BLE AUX, only
+// the ones this radio has (BLE bay: bay build; BLE AUX: AUX1 in UltraEdge mode). [ENTER] moves the choice, shown as
+// pending ("[USB SD card]", "Applies in 2 s, EXIT cancels"); it applies 2 s after the last ENTER, until power-off like
+// s43 (s73, radio day F-1: switching at once dropped the app or handed the SD card to the phone mid-cycle). [EXIT]
+// while pending keeps the mode in use; the next EXIT leaves. [ENTER long] saves what the line shows (USB default in
+// the radio's own settings as s43 does, the wireless route in /UE/LINK.TXT). A USB cable always takes over from BLE (s52 arbitration). The decisions: ue_connect_ui.h.
+// A USBNET build (s46, development only) keeps the s43/s46 "USB now:" screen below.
+#include "thirdparty/ultraedge/ue_connect_ui.h"
+#if defined(UE_AUXMOD)
+  #define UE_SCREEN_VARIANT " companion auxmod"   // s60
+#else
+  #define UE_SCREEN_VARIANT " companion"
+#endif
+static const char* s_ueConnMsg = nullptr;   // one-shot note after ENTER long ("Saved")
+#endif
+
 void menuCompanionOnly(event_t event)
 {
+#if !defined(UE_USBNET)
+  if (event == EVT_ENTRY || event == EVT_ENTRY_UP) {   // s73: a choice left pending by an earlier visit never applies
+    ueconn::cancelPending();
+    s_ueConnMsg = nullptr;
+  }
+  if (event == EVT_KEY_BREAK(KEY_EXIT) || event == EVT_KEY_LONG(KEY_EXIT)) {
+    killEvents(event);
+    s_ueConnMsg = nullptr;
+    if (event == EVT_KEY_BREAK(KEY_EXIT) && ueconn::cancelPending()) return;   // s73: keep the mode in use, stay here
+    ueconn::cancelPending();
+    if (menuLevel > 0) popMenu(); else chainMenu(menuMainView);
+    return;
+  }
+  if (event == EVT_KEY_BREAK(KEY_ENTER)) {
+    killEvents(event);
+    s_ueConnMsg = nullptr;
+    ueconn::press();   // s73: moves the choice only; it applies after the pause
+  }
+  else if (event == EVT_KEY_LONG(KEY_ENTER)) {
+    killEvents(event);
+    s_ueConnMsg = ueconn::saveDefault();
+  }
+  ueconn::pendingTick();
+  uint8_t now = ueconn::now(), shown = ueconn::shown(), saved = ueconn::saved();
+  const char* pend = ueconn::pendingStatus("EXIT");
+  lcdDrawText(LCD_W / 2, 0, "ULTRAEDGE", CENTERED);
+  lcdInvertLine(0);
+  lcdDrawText(LCD_W / 2, 9, "Settings are in the app.", CENTERED | SMLSIZE);
+  // s75 (F-7): the label and the value in the small font, like the Default: row, so "UltraEdge (Serial)" (81 px) fits
+  // beside "Connect:" (36 px) on 128 px.
+  lcdDrawText(2, 18, "Connect:", SMLSIZE);
+  if (pend) {   // s73: pending = bracketed, not inverted
+    char b[24] = "[";
+    strncat(b, ueconn::NAME[shown], sizeof(b) - 3);
+    strcat(b, "]");
+    // s75: "[UltraEdge (Serial)]" (89 px) has no room for the brackets: shown bare, still not inverted
+    lcdDrawText(LCD_W - 2, 18, getTextWidth(b, 0, SMLSIZE) <= LCD_W - 44 ? b : ueconn::NAME[shown], RIGHT | SMLSIZE);
+  }
+  else lcdDrawText(LCD_W - 2, 18, ueconn::NAME[now], RIGHT | INVERS | SMLSIZE);
+  lcdDrawText(2, 25, "Default:", SMLSIZE);
+  lcdDrawText(LCD_W - 2, 25, ueconn::NAME[saved], RIGHT | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 33, pend ? pend : s_ueConnMsg ? s_ueConnMsg : ueconn::status(now), CENTERED | SMLSIZE);
+  // Identity (s28, s38) on two lines to make room for the status line.
+  lcdDrawText(LCD_W / 2, 40, "UE " UE_FW_VERSION UE_SCREEN_VARIANT, CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 47, UE_GIT " " UE_BUILD_DATE " " GIT_STR, CENTERED | SMLSIZE);
+  lcdDrawText(LCD_W / 2, 56, "ENT next  long:save  EXIT", CENTERED | SMLSIZE);
+#else
   if (event == EVT_KEY_BREAK(KEY_EXIT) || event == EVT_KEY_LONG(KEY_EXIT)) {
     killEvents(event);
     if (menuLevel > 0) popMenu(); else chainMenu(menuMainView);
@@ -73,6 +138,7 @@ void menuCompanionOnly(event_t event)
   lcdDrawText(LCD_W / 2, 40, "git " UE_GIT " " UE_BUILD_DATE, CENTERED | SMLSIZE);
   lcdDrawText(LCD_W / 2, 47, "EdgeTX " GIT_STR, CENTERED | SMLSIZE);
   lcdDrawText(LCD_W / 2, 56, "ENT switch  long:save  EXIT", CENTERED | SMLSIZE);
+#endif
 }
 
 // Unfilled tab-table slots are null; menus_common.cpp maps any null handler to menuCompanionOnly in this build.

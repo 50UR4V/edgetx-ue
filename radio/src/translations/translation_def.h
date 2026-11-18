@@ -129,7 +129,11 @@
 
 #define TR_VCELLINDEX               SA11(TR_VCELLINDEX)
 
+#if defined(UE_AUXLINK)   // UltraEdge s52: one more serial mode, same label in every language
+#define TR_AUX_SERIAL_MODES         SA11(TR_AUX_SERIAL_MODES), "UltraEdge"
+#else
 #define TR_AUX_SERIAL_MODES         SA11(TR_AUX_SERIAL_MODES)
+#endif
 
 #define TR_VFORMULAS                SA9(TR_VFORMULAS)
 #define TR_FS_COLOR_LIST            SA9(TR_FS_COLOR_LIST)

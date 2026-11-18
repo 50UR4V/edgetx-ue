@@ -560,6 +560,12 @@ bool isSerialModeAvailable(uint8_t port_nr, int mode)
     return false;
 #endif
 
+#if defined(UE_AUXLINK)
+  // UltraEdge s52: the USB serial port already carries the companion (it negotiates on HELLO)
+  if (mode == UART_MODE_ULTRAEDGE && port_nr == SP_VCP)
+    return false;
+#endif
+
 #if !defined(LUA)
   if (mode == UART_MODE_LUA)
     return false;

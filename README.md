@@ -3,7 +3,7 @@
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE) [![Protocol: MIT](https://img.shields.io/badge/UE%20Protocol-MIT-yellow.svg)](https://github.com/50UR4V/ue-protocol)
 
 This is [EdgeTX](https://github.com/EdgeTX/edgetx) plus the UltraEdge companion overlay. It lets the **UltraEdge**
-Android app, connected over USB, edit supported model and radio settings, show telemetry and run Lua tools. The radio
+Android app, connected over USB (or Bluetooth through an UltraEdge wireless module), edit supported model and radio settings, show telemetry and run Lua tools. The radio
 runs the control loop and validates every setting it saves. Unplug the phone and the radio keeps flying exactly as
 EdgeTX does. With the overlay compiled out, the build is byte-for-byte identical to upstream EdgeTX.
 
@@ -19,12 +19,17 @@ EdgeTX does. With the overlay compiled out, the build is byte-for-byte identical
 ## Download
 Get the `.bin` (or `.uf2` for H750 radios) for your radio from **[Releases](../../releases)** and follow `FLASHING.md` in that release.
 
-**v1.2.1** (Latest, production and beta): RadioMaster Pocket, Zorro and FrSky QX7 / QX7S (**not** the QX7 ACCESS) as
-companion builds, RadioMaster TX16S as a full build, hardware-verified (TX16S 2026-11-07, the others 2026-11-08); for app 1.6.4 on Google Play and
-1.6.5 on Play open testing. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to keep the radio's own
-menus. v1.2.1 also has files for the other 52 EdgeTX radios (companion build on black-and-white radios, full build
-on colour radios): built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
+**v1.2.2** (Latest, production and beta): RadioMaster Pocket, Zorro and FrSky QX7 / QX7S (**not** the QX7 ACCESS) as
+companion builds, RadioMaster TX16S as a full build, hardware-verified on v1.2.2 (November 2026); for app 1.7.1 on Google Play
+and Play open testing. Each of these files carries wireless for an UltraEdge wireless module in the module bay (nano bay
+on the Pocket and Zorro, JR bay on the TX16S; on the QX7 with the model's Internal RF Off) and on AUX1 where the radio has
+it; a modified QX7 has its own `-auxmod` file
+([manual](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/16-wireless.md)). **v1.2.1** stays available and
+works with app 1.7.1 without the v1.2.2 features. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to
+keep the radio's own menus. v1.2.2 also has files for the other 52 EdgeTX radios (companion build on black-and-white radios, full build
+on colour radios). RadioMaster Boxer: reported working by a tester. The other 51: built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
 [User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
+
 
 ## Get the app
 - **UltraEdge for EdgeTX RC Radios** (Google Play): https://play.google.com/store/apps/details?id=com.ultraedge.companion

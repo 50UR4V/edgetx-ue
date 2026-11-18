@@ -62,6 +62,17 @@
 #include "translations/i18n/en.h"
 #endif
 
+#if defined(USB_COMPANION)
+// UltraEdge s75 (F-7, owner 2026-11-15): the USB mode that carries the UltraEdge app (USB_SERIAL_MODE, unchanged) is
+// called "UltraEdge (Serial)" in every list a pilot sees: the USB popup on plug-in, the Radio settings USB mode field and
+// the ULTRAEDGE page's Connect list (ueconn::NAME). Same label in every language. 128 px wide B&W: "UE (Serial)"
+// (only a FULL B&W build has that field; companion builds have no Radio Setup page).
+#undef TR_USB_SERIAL
+#define TR_USB_SERIAL               "UltraEdge (Serial)"
+#undef TR_USBMODES_4
+#define TR_USBMODES_4               TR("UE (Serial)", "UltraEdge (Serial)")
+#endif
+
 uint8_t getLanguageId(const char* lang)
 {
   for (uint8_t i = 0; languagePacks[i] != nullptr; i++) {

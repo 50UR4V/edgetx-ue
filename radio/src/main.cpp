@@ -565,6 +565,9 @@ void initLoggingTimer();
 #if defined(USB_COMPANION)
 extern "C" void ultraedgeCompanionTick();   // ALL companion processing — MAIN task only (ADR-0020)
 extern "C" void ueCompanionMainSync();       // telemetry-queue register/deregister (MAIN task)
+#if defined(UE_AUXLINK)
+extern "C" bool ueAuxLinkPresent();          // s52 (ADR-0057): AUX port in "UltraEdge" mode
+#endif
 #endif
 #if defined(UE_DEBUG_CRUMBS)
 extern "C" void ueCrumbFlush();              // companion breadcrumbs -> SD (MAIN task)
@@ -587,6 +590,9 @@ void perMain()
     static bool ueWasSerial = false;
     static tmr10ms_t ueLastTick = 0;
     bool ueSerial = (getSelectedUsbMode() == USB_SERIAL_MODE);
+#if defined(UE_AUXLINK)
+    ueSerial = ueSerial || ueAuxLinkPresent();   // s52: an AUX port set to "UltraEdge" also carries the companion
+#endif
     if (ueSerial || ueWasSerial) {
       ueWasSerial = ueSerial;
       if ((tmr10ms_t)(g_tmr10ms - ueLastTick) != 0) {

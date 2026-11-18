@@ -130,6 +130,13 @@ void checkTrainerSettings()
     if (currentTrainerMode != 0xFF) {
       stopTrainer();
     }
+#if defined(UE_BAYLINK)
+    // s61 (ADR-0064): a bay trainer module (CPPM/SBUS on the heartbeat pin) takes the bay back from the UltraEdge link
+    extern void ueBayYieldNow();
+    if (requiredTrainerMode == TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE ||
+        requiredTrainerMode == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE)
+      ueBayYieldNow();
+#endif
 
     switch (requiredTrainerMode) {
       case TRAINER_MODE_MASTER_TRAINER_JACK:

@@ -30,6 +30,10 @@
 #include "screen_setup.h"
 #include "standalone_lua.h"
 #include "view_channels.h"
+
+#if defined(UE_BAYLINK)
+extern "C" bool ueBayModelAsk(const char* path, bool* external);   // s72: companion_emit.cpp
+#endif
 #include "view_main.h"
 
 inline tmr10ms_t getTicks() { return g_tmr10ms; }
@@ -361,6 +365,22 @@ class ModelsPageBody : public Window
       }
     }
 
+#if defined(UE_BAYLINK)
+    // s72 (ADR-0064 decision 10 on the colour UI): the bay carries the Bluetooth link and this model takes the bay
+    // (External RF, a bay trainer, or an internal XJT on S.Port): ask first, as the B&W radios do (s64).
+    if (model != modelslist.getCurrentModel()) {
+      char path[LEN_MODEL_FILENAME + sizeof(MODELS_PATH) + 2];
+      getModelPath(path, model->modelFilename);
+      bool external = true;
+      if (ueBayModelAsk(path, &external) &&
+          !confirmationDialog("Bluetooth link will stop",
+                              external ? "This model uses the module bay (External RF). The Bluetooth module in the bay "
+                                         "loses its slot."
+                                       : "This model uses Internal RF, which shares the bay's wire on this radio.",
+                              false))
+        return;
+    }
+#endif
     closeHandler();
 
     // Skip reloading model if re-selecting the active model

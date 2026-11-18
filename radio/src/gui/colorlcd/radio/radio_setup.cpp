@@ -1062,7 +1062,108 @@ static bool hasShortcutKeys()
 }
 #endif
 
+#if defined(USB_COMPANION)
+// s71 (owner D-BAY-5/6, 2026-11-11): the colour radios' ULTRAEDGE screen, SYS › Radio settings › UltraEdge. The same
+// Connect: choice, saved default and status line as the B&W companion screen (gui/128x64/ui_companion_stubs.cpp), in this
+// UI's style: the Connect list holds only the choices this radio has (BLE AUX once AUX1 is UltraEdge in SYS › Hardware;
+// BLE bay in a bay build). "Save as default" keeps it. Decisions: ue_connect_ui.h.
+// s73 (radio day F-1, owner 2026-11-15 "pick, then apply after a pause"): a pick from the Connect list only moves the
+// choice: it shows as "[USB SD card]" with "Applies in 2 s, RTN cancels" on the Status line and applies 2 s after the
+// last pick, until power-off. RTN (or the header back arrow) while it is pending keeps the mode in use and stays on the
+// page; the next RTN leaves. The pause holds while the list (or any window) is open on top; leaving the page cancels.
+#include "static.h"
+#include "thirdparty/ultraedge/ue_connect_ui.h"
+#include "thirdparty/ultraedge/ue_version.h"
+#include "stamp.h"
+#if defined(ALL_LANGS) && !defined(BOOT)
+static const char* ueStrUltraEdge() { return "UltraEdge"; }
+#define UE_STR_PAGE ueStrUltraEdge
+#else
+#define UE_STR_PAGE "UltraEdge"
+#endif
+static const char* s_ueConnMsg = nullptr;   // "Saved" / "SD card: not saved", shown for 3 s on the status line
+static uint32_t s_ueConnMsgAt = 0;
+// s73: the Connect choice brackets a pending pick; the label is redrawn when the pick applies or is cancelled.
+class UeConnChoice : public Choice
+{
+ public:
+  using Choice::Choice;
+ protected:
+  bool lastPending = false;
+  std::string getLabelText() override
+  {
+    std::string s = Choice::getLabelText();
+    return ueconn::isPending() ? "[" + s + "]" : s;
+  }
+  void checkEvents() override
+  {
+    if (ueconn::isPending() != lastPending) { lastPending = ueconn::isPending(); currentValue = INT_MAX; }
+    Choice::checkEvents();
+  }
+};
+// s73: the page runs the pause (applies after it, holds it while a window is on top) and RTN cancels a pending pick.
+class UeConnectPage : public SubPage
+{
+ public:
+  UeConnectPage() : SubPage(ICON_RADIO_SETUP, STR_MAIN_RADIO_SETTINGS, "ULTRAEDGE") { ueconn::cancelPending(); }
+  void onCancel() override
+  {
+    if (Window::topWindow() == this && ueconn::cancelPending()) return;   // RTN / back arrow: keep the mode in use
+    ueconn::cancelPending();   // quick menu, shortcut keys: the page closes, the pick never applies
+    SubPage::onCancel();
+  }
+  void deleteLater() override { ueconn::cancelPending(); SubPage::deleteLater(); }
+  void checkEvents() override
+  {
+    SubPage::checkEvents();
+    if (Window::topWindow() != this) ueconn::holdPending();   // the list is open: still picking
+    else ueconn::pendingTick();
+  }
+};
+static void ueConnectPage()
+{
+  auto page = new UeConnectPage();
+  page->setupLine("Connect", [](Window* parent, coord_t x, coord_t y) {
+    auto c = new UeConnChoice(parent, {x, y, 0, 0}, ueconn::NAME, 0, uebay::C_N - 1,
+                        []() { return (int)ueconn::shown(); },
+                        [](int v) { s_ueConnMsg = nullptr; ueconn::pick((uint8_t)v); });
+    c->setAvailableHandler([](int v) { return ueconn::available((uint8_t)v); });
+  });
+  page->setupLine("Default", [](Window* parent, coord_t x, coord_t y) {
+    new DynamicText(parent, {x, y + PAD_MEDIUM, 0, 0}, []() { return std::string(ueconn::NAME[ueconn::saved()]); });
+  });
+  page->setupLine("", [](Window* parent, coord_t x, coord_t y) {
+    new TextButton(parent, {x, y, 0, 0}, "Save as default", []() -> uint8_t {
+      s_ueConnMsg = ueconn::saveDefault();
+      s_ueConnMsgAt = g_tmr10ms;
+      return 0;
+    });
+  });
+  page->setupLine("Status", [](Window* parent, coord_t x, coord_t y) {
+    new DynamicText(parent, {x, y + PAD_MEDIUM, 0, 0}, []() {
+      if (const char* p = ueconn::pendingStatus("RTN")) return std::string(p);   // s73
+      if (s_ueConnMsg && (uint32_t)(g_tmr10ms - s_ueConnMsgAt) < 300) return std::string(s_ueConnMsg);
+      s_ueConnMsg = nullptr;
+      return std::string(ueconn::status(ueconn::now()));
+    });
+  });
+  page->setupLine("Settings", [](Window* parent, coord_t x, coord_t y) {
+    new StaticText(parent, {x, y + PAD_MEDIUM, 0, 0}, "are in the UltraEdge app");
+  });
+  // Identity (s28, s38): the same FW/VERS/GIT#/DATE the Version page and the app show.
+  page->setupLine("Firmware", [](Window* parent, coord_t x, coord_t y) {
+    new StaticText(parent, {x, y + PAD_MEDIUM, 0, 0}, "UE " UE_FW_VERSION "  git " UE_GIT);
+  });
+  page->setupLine("Built", [](Window* parent, coord_t x, coord_t y) {
+    new StaticText(parent, {x, y + PAD_MEDIUM, 0, 0}, UE_BUILD_DATE " " UE_BUILD_TIME "  EdgeTX " GIT_STR);
+  });
+}
+#endif
+
 const static PageButtonDef radioSetupButtons[] = {
+#if defined(USB_COMPANION)
+  {UE_STR_PAGE, []() { ueConnectPage(); }},   // s71: first, where the pilot looks for it
+#endif
 #if defined(AUDIO)
   {STR_DEF(STR_SOUND_LABEL), []() { new SubPage(ICON_RADIO_SETUP, STR_MAIN_RADIO_SETTINGS, STR_SOUND_LABEL, soundPageSetupLines); }},
 #endif

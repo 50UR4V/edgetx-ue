@@ -258,6 +258,9 @@ enum UartModes {
   UART_MODE_DEBUG,
   UART_MODE_SPACEMOUSE,
   UART_MODE_EXT_MODULE,
+#if defined(UE_AUXLINK)
+  UART_MODE_ULTRAEDGE,   // UltraEdge s52 (ADR-0057): companion link through an ESP32-C3 bridge on this port
+#endif
   UART_MODE_COUNT SKIP,
   UART_MODE_MAX SKIP = UART_MODE_COUNT-1
 };

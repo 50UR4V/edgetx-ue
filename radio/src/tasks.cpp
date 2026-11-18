@@ -49,6 +49,11 @@ mutex_handle_t audioMutex;
 
 #define MENU_TASK_PERIOD (50)  // 50ms
 
+#if defined(USB_COMPANION)
+extern "C" bool ueFastSticksWanted();   // s65: the app asked STREAM_SOURCES above 30 Hz
+extern "C" void ueFastSticksTick();     // s65: one sticks-only frame, at most every 10 ms
+#endif
+
 #if defined(COLORLCD) && defined(CLI)
 bool perMainEnabled = true;
 #endif
@@ -87,6 +92,16 @@ static void menusTask()
 #endif
     DEBUG_TIMER_STOP(debugTimerPerMain);
 
+#if defined(USB_COMPANION)
+    // s65: while the app asks for fast sticks (a simulator tool is open), wake every 10 ms between perMain() passes
+    // and send the sticks (ueFastSticksTick). The loop period and perMain()'s own pace stay MENU_TASK_PERIOD.
+    if (ueFastSticksWanted()) {
+      for (uint8_t i = 0; i < MENU_TASK_PERIOD / 10; i++) {
+        sleep_until(&next_tick, 10);
+        if (i + 1 < MENU_TASK_PERIOD / 10) ueFastSticksTick();
+      }
+    } else
+#endif
     sleep_until(&next_tick, MENU_TASK_PERIOD);
     resetForcePowerOffRequest();
   }

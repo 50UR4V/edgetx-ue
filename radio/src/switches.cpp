@@ -1190,6 +1190,27 @@ void logicalSwitchesReset()
   luaSetStickySwitchBuffer.clear();
 }
 
+#if defined(USB_COMPANION)
+// s68 (ADR-0066): the companion keeps the logical switches' runtime state (sticky states, delay/duration timers, edge
+// and delta state) across the reload after an app save of the active model, as an edit in the radio's menus would.
+uint32_t ueLswStateSize() { return sizeof(lswFm); }
+void ueLswStateSave(void* dst) { memcpy(dst, lswFm, sizeof(lswFm)); }
+void ueLswStateRestore(const void* src) { memcpy(lswFm, src, sizeof(lswFm)); }
+// One switch whose function changed (or that was removed): back to what a model load gives it (logicalSwitchesReset +
+// logicalSwitchesInit for that index only).
+void ueLswStateResetOne(uint8_t idx)
+{
+  for (uint8_t fm=0; fm<MAX_FLIGHT_MODES; fm++) {
+    memclear(&lswFm[fm].lsw[idx], sizeof(LogicalSwitchContext));
+    LS_LAST_VALUE(fm, idx) = CS_LAST_VALUE_INIT;
+  }
+  LogicalSwitchData * ls = lswAddress(idx);
+  if (ls->func == LS_FUNC_STICKY && ls->lsPersist) {
+    lswFm[mixerCurrentFlightMode].lsw[idx].lastValue = ls->lsState;
+  }
+}
+#endif
+
 getvalue_t convertLswTelemValue(LogicalSwitchData * ls)
 {
   getvalue_t val;

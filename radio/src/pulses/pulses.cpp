@@ -549,6 +549,20 @@ void pulsesSendNextFrame(uint8_t module)
     if (_handle_async_restart(module))
       return;
     
+#if defined(UE_BAYLINK)
+    // s61 (ADR-0064): the UltraEdge bay link holds the bay port. Ask it to let go (the companion tick releases it in
+    // the main task) and try again next cycle; protocol is left unchanged so this branch runs again.
+    extern bool ueBayYieldRequest();
+#if defined(UE_BAY_HD_INT_SPORT)
+    // s62/s72 (route B): an internal XJT (QX7) uses the same S.Port UART as the bay link, so it waits for it too.
+    if (protocol != PROTOCOL_CHANNELS_NONE && (module == EXTERNAL_MODULE || protocol == PROTOCOL_CHANNELS_PXX1) &&
+        ueBayYieldRequest())
+      return;
+#else
+    if (module == EXTERNAL_MODULE && protocol != PROTOCOL_CHANNELS_NONE && ueBayYieldRequest())
+      return;
+#endif
+#endif
     pulsesEnableModule(module, protocol);
     moduleState[module].protocol = protocol;
     return;
