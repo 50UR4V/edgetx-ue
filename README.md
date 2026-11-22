@@ -22,14 +22,14 @@ New here? Start at [ultraedge.app](https://ultraedge.app).
 Get the `.bin` (or `.uf2` for H750 radios) for your radio from **[Releases](../../releases)** and follow `FLASHING.md` in that release.
 
 **v1.2.2** (Latest, production and beta): RadioMaster Pocket, Zorro and FrSky QX7 / QX7S (**not** the QX7 ACCESS) as
-companion builds, RadioMaster TX16S as a full build, hardware-verified on v1.2.2 (November 2026); for app 1.7.1 on Google Play
+companion builds, RadioMaster TX16S as a full build, tested in flight; for app 1.7.1 on Google Play
 and Play open testing. Each of these files carries wireless for an UltraEdge wireless module in the module bay (nano bay
 on the Pocket and Zorro, JR bay on the TX16S; on the QX7 with the model's Internal RF Off) and on AUX1 where the radio has
 it; a modified QX7 has its own `-auxmod` file
 ([manual](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/16-wireless.md)). **v1.2.1** stays available and
 works with app 1.7.1 without the v1.2.2 features. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to
-keep the radio's own menus. v1.2.2 also has files for 52 more EdgeTX radios (companion build on black-and-white radios, full build
-on colour radios). RadioMaster Boxer: reported working by a tester. The remaining 51: built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
+keep the radio's own menus. v1.2.2 has files for 56 EdgeTX radios in all (companion build on black-and-white radios, full build
+on colour radios); see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
 [User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
 
 

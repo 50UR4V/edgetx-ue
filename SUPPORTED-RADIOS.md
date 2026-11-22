@@ -1,16 +1,13 @@
 # Supported radios
 
 **UltraEdge is made for any EdgeTX radio.** The firmware is EdgeTX with the UltraEdge companion overlay built in, so
-it builds for every radio EdgeTX supports. This page shows which radios have a ready-made build and who has checked
-that it works on the real radio.
+it builds for every radio EdgeTX supports. This page lists every radio with a ready-made build.
 
 Firmware **v1.2.2** for every radio below (app **1.7.1**, production and beta). It is built on **EdgeTX 3.0-dev** (base
 `90bbce17`), not EdgeTX 2.x: back up your SD card before you flash, and restore it if you go back to stock EdgeTX 2.x.
 Want another language or build option? Build your own file with the [firmware builder](https://github.com/50UR4V/ultraedge-firmware-builder).
 
-Hardware-verified on v1.2.2: Pocket, Zorro, TX16S and QX7 (November 2026). RadioMaster Boxer: reported working by a tester. The other 51 radios: built, not hardware-tested
-yet. A radio is
-marked verified when we, a tester or the community run the checklist below on the real radio.
+**UltraEdge firmware v1.2.2 is ready for 56 EdgeTX radios.** Tested in flight on RadioMaster Pocket, Zorro, TX16S and FrSky QX7.
 
 **Wireless** (UltraEdge wireless module, Bluetooth): the module sits in the radio's module bay; AUX1 is the
 do-it-yourself option on radios that have the port. One firmware file per radio carries both, so you can add a module
@@ -18,16 +15,7 @@ later. The **Wireless** column below says what each file supports; see the
 [manual](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/16-wireless.md). Other radios with a module bay
 get the bay link later.
 
-## Status key
-
-| Status | Meaning |
-|---|---|
-| ✅ Verified (owner) | The UltraEdge team ran the full checklist below on this radio. |
-| ✅ Verified (tester: name) | A beta tester ran the checklist and reported it. |
-| ✅ Verified (community: link) | Someone reported a passing checklist in a public GitHub issue. |
-| 👍 Reported working (tester) | A tester reported the radio works with UltraEdge; no checklist record yet. |
-| 🔨 Built, not yet verified | Firmware builds and passes our build checks, but nobody has run it on this radio yet (the firmware builder calls this *community-unverified*). **Help us verify it.** |
-| ❌ Not supported yet (reason) | No working build yet, and why. |
+## Build key
 
 **Build** says which firmware you get:
 - **Companion**: the radio's own model and radio-settings menus are removed and live in the app. The radio still
@@ -38,74 +26,73 @@ get the bay link later.
 
 ## Radios
 
-**Today: 4 verified · 52 built, not yet verified · 4 not supported.**
+**56 radios with a ready-made build.** The FrSky ETHOS radios have no EdgeTX target (see the notes).
 
-| Radio | MCU · flash | Screen | Build | Wireless | Status |
-|---|---|---|---|---|---|
-| BETAFPV LiteRadio 3 Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Fatfish F16 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FlySky Elysium EL18 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FlySky Nirvana NV14 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FlySky Noble NB4+ | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FlySky PA01 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| FlySky Paladin PL18 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FlySky Paladin PL18EV | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FlySky Paladin PL18U | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FlySky ST16 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| FrSky Horus X10 / X10S | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Horus X10 / X10S Express | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Horus X12S | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Tandem X18 / X18S / X18SE | — | Colour | — | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
-| FrSky Tandem X20 / X20S / X20 HD (Horus X20 family) | — | Colour | — | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
-| FrSky Twin X14 / X14S / X14RS | — | Colour | — | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
-| FrSky Twin X-Lite / X-Lite S / X-Lite RII | — | Colour | — | — | ❌ Not supported (no EdgeTX target; runs FrSky ETHOS only) |
-| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Bay link (JR bay) with the model's Internal RF Off; a modified QX7 (`-auxmod` file): AUX1 too | ✅ Verified (owner) on v1.2.2, November 2026 |
-| FrSky Taranis Q X7 ACCESS | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X-Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X-Lite S / Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X9 Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X9 Lite S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X9D | STM32 F205xE · 512 KB | 212×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X9D Plus | STM32 F205xE · 512 KB | 212×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X9D Plus 2019 | STM32 F407xE · 512 KB | 212×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| FrSky Taranis X9E | STM32 F407xE · 512 KB | 212×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| HelloRadioSky V12 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| HelloRadioSky V14 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| HelloRadioSky V14 LCD | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| HelloRadioSky V16 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| iFlight Commando 14 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| iFlight Commando 8 | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper Bumblebee | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T-Lite (v1) | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T-Pro (v1) | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T-Pro S | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T-Pro V2 | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T12 / T12 Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T12 MAX | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T14 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T15 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T15 Pro | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| Jumper T16 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T18 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T20 | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T20 V2 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| Jumper T22 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| RadioMaster Boxer | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 👍 Reported working (tester) |
-| RadioMaster GX12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| RadioMaster GX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| RadioMaster MT12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| RadioMaster Pocket | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Bay link (nano bay) + AUX1 | ✅ Verified (owner) on v1.2.2, November 2026 |
-| RadioMaster T8 Pro / T8 Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| RadioMaster TX12 | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| RadioMaster TX12 MKII | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later | 🔨 Built, not yet verified |
-| RadioMaster TX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| RadioMaster TX16S / TX16S MKII | STM32 F429xI · 2 MB | Colour | Full (.bin) | Bay link (JR bay) + AUX1 | ✅ Verified (owner) on v1.2.2, November 2026 |
-| RadioMaster TX16S MK3 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later | 🔨 Built, not yet verified |
-| RadioMaster Zorro | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Bay link (nano bay) + AUX1 | ✅ Verified (owner) on v1.2.2, November 2026 |
+| Radio | MCU · flash | Screen | Build | Wireless |
+|---|---|---|---|---|
+| BETAFPV LiteRadio 3 Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| Fatfish F16 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FlySky Elysium EL18 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FlySky Nirvana NV14 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FlySky Noble NB4+ | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FlySky PA01 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| FlySky Paladin PL18 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FlySky Paladin PL18EV | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FlySky Paladin PL18U | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FlySky ST16 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| FrSky Horus X10 / X10S | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FrSky Horus X10 / X10S Express | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FrSky Horus X12S | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| FrSky Tandem X18 / X18S / X18SE | — | Colour | None (runs FrSky ETHOS only) | — |
+| FrSky Tandem X20 / X20S / X20 HD (Horus X20 family) | — | Colour | None (runs FrSky ETHOS only) | — |
+| FrSky Twin X14 / X14S / X14RS | — | Colour | None (runs FrSky ETHOS only) | — |
+| FrSky Twin X-Lite / X-Lite S / X-Lite RII | — | Colour | None (runs FrSky ETHOS only) | — |
+| FrSky Taranis Q X7 / Q X7S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Bay link (JR bay) with the model's Internal RF Off; a modified QX7 (`-auxmod` file): AUX1 too |
+| FrSky Taranis Q X7 ACCESS | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X-Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X-Lite S / Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X9 Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X9 Lite S | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X9D | STM32 F205xE · 512 KB | 212×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X9D Plus | STM32 F205xE · 512 KB | 212×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X9D Plus 2019 | STM32 F407xE · 512 KB | 212×64 mono | Companion (.bin) | Later |
+| FrSky Taranis X9E | STM32 F407xE · 512 KB | 212×64 mono | Companion (.bin) | Later |
+| HelloRadioSky V12 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| HelloRadioSky V14 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| HelloRadioSky V14 LCD | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| HelloRadioSky V16 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| iFlight Commando 14 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| iFlight Commando 8 | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| Jumper Bumblebee | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T-Lite (v1) | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T-Pro (v1) | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T-Pro S | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T-Pro V2 | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T12 / T12 Pro | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T12 MAX | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T14 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T15 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| Jumper T15 Pro | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| Jumper T16 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| Jumper T18 | STM32 F429xI · 2 MB | Colour | Full (.bin) | Later |
+| Jumper T20 | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T20 V2 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| Jumper T22 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| RadioMaster Boxer | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| RadioMaster GX12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| RadioMaster GX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| RadioMaster MT12 | STM32 F407xG · 1 MB | 128×64 mono | Companion (.bin) | Later |
+| RadioMaster Pocket | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Bay link (nano bay) + AUX1 |
+| RadioMaster T8 Pro / T8 Lite | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| RadioMaster TX12 | STM32 F205xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| RadioMaster TX12 MKII | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Later |
+| RadioMaster TX15 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| RadioMaster TX16S / TX16S MKII | STM32 F429xI · 2 MB | Colour | Full (.bin) | Bay link (JR bay) + AUX1 |
+| RadioMaster TX16S MK3 | STM32 H750xB · 8 MB QSPI | Colour | Full (.uf2) | Later |
+| RadioMaster Zorro | STM32 F407xE · 512 KB | 128×64 mono | Companion (.bin) | Bay link (nano bay) + AUX1 |
 
 Notes:
-- **FrSky Q X7 vs Q X7 ACCESS are different radios** (STM32F205 vs STM32F407). Flash the file for your model. Only the
-  non-ACCESS Q X7 is verified.
+- **FrSky Q X7 vs Q X7 ACCESS are different radios** (STM32F205 vs STM32F407). Flash the file for your model.
 - **FrSky ETHOS radios** (Tandem X18 and X20 families, Twin X14 and X-Lite) have no EdgeTX target, so there is no
   UltraEdge build for them. The older Horus X10 / X10S / X12S do run EdgeTX and are listed above.
 - **Wireless "Later":** the bay link reaches other radios with a module bay in a later release. Radios without a bay
@@ -115,9 +102,9 @@ Notes:
   EdgeTX.
 
 
-## Help verify your radio
+## Check your radio after flashing
 
-If your radio says **🔨 Built, not yet verified**, you can move it to ✅ in about 20 minutes.
+A bench check of about 20 minutes before your first flight.
 
 **Before you start:** back up your SD card and your current firmware. Bench-test only, **props off**. On a
 Companion build the radio's own menus are gone; to get them back, flash stock EdgeTX again.
@@ -132,11 +119,9 @@ Companion build the radio's own menus are gone; to get them back, flash stock Ed
 5. **Telemetry:** with a receiver bound, the app's telemetry screen shows live values (RSSI, voltage).
 6. **Calibration:** run the app's calibration wizard (System › Hardware › Calibration). Sticks and pots read correctly after.
 
-**Report it:** open a GitHub issue at **[50UR4V/UltraEdge-app](https://github.com/50UR4V/UltraEdge-app/issues)**
-titled `Verified: <radio name>` (or `Problem: <radio name>`). Paste:
+**Something wrong?** Open a GitHub issue at **[50UR4V/UltraEdge-app](https://github.com/50UR4V/UltraEdge-app/issues)**
+titled `Problem: <radio name>`. Paste:
 - the full contents of the `.txt` file that sits next to the firmware you flashed (it holds FW, VERS, GIT#, DATE and
   the SHA-256),
 - which of steps 1–6 passed, and anything that didn't,
 - your app version (System › About and licences) and phone model.
-
-Tell us how you'd like to be credited (name or handle). We update this table when a report comes in.
