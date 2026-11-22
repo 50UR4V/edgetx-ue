@@ -7,6 +7,8 @@ Android app, connected over USB (or Bluetooth through an UltraEdge wireless modu
 runs the control loop and validates every setting it saves. Unplug the phone and the radio keeps flying exactly as
 EdgeTX does. With the overlay compiled out, the build is byte-for-byte identical to upstream EdgeTX.
 
+New here? Start at [ultraedge.app](https://ultraedge.app).
+
 <p align="center"><img src="screenshots/UE_IMG3.jpeg" alt="Phone mounted on a RadioMaster Pocket running this firmware, showing a Lua telemetry screen" width="420"></p>
 
 <table>
@@ -26,8 +28,8 @@ on the Pocket and Zorro, JR bay on the TX16S; on the QX7 with the model's Intern
 it; a modified QX7 has its own `-auxmod` file
 ([manual](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/16-wireless.md)). **v1.2.1** stays available and
 works with app 1.7.1 without the v1.2.2 features. **v1.1.2.4**: full builds for Pocket, Zorro and QX7, if you want to
-keep the radio's own menus. v1.2.2 also has files for the other 52 EdgeTX radios (companion build on black-and-white radios, full build
-on colour radios). RadioMaster Boxer: reported working by a tester. The other 51: built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
+keep the radio's own menus. v1.2.2 also has files for 52 more EdgeTX radios (companion build on black-and-white radios, full build
+on colour radios). RadioMaster Boxer: reported working by a tester. The remaining 51: built, not hardware-tested yet; see [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md). Which to pick:
 [User Manual › Which version?](https://github.com/50UR4V/UltraEdge-app/blob/main/UserManual/README.md#which-version).
 
 
