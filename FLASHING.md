@@ -1,7 +1,7 @@
 # Flashing UltraEdge firmware v1.2.2
 
 v1.2.2 is the firmware for both the production app (**UltraEdge 1.7.1**, Google Play) and the beta (**1.7.1**, open
-testing). Four radios are hardware-tested; the other 52 are built, not hardware-tested (see
+testing). It is ready for 56 EdgeTX radios (see
 [`SUPPORTED-RADIOS.md`](SUPPORTED-RADIOS.md)). Back up your SD card and your current firmware first, and bench-test
 with the propeller off.
 
@@ -14,65 +14,65 @@ Flash **only the file for your exact radio**. The Q X7 ACCESS is not the Q X7 an
 `.txt` beside it that lists exactly what the radio's Version page or UltraEdge screen will show. Verify downloads with
 `shasum -a 256 -c SHA256SUMS.txt`.
 
-| File | Radio | Build | Status |
-|---|---|---|---|
-| `edgetx-ue-betafpv-lr3pro-v1.2.2-companion.bin` | BETAFPV LiteRadio 3 Pro | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-fatfish-f16-v1.2.2.bin` | Fatfish F16 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-el18-v1.2.2.bin` | FlySky Elysium EL18 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-nv14-v1.2.2.bin` | FlySky Nirvana NV14 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-nb4p-v1.2.2.bin` | FlySky Noble NB4+ | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-pa01-v1.2.2.uf2` | FlySky PA01 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-pl18-v1.2.2.bin` | FlySky Paladin PL18 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-pl18ev-v1.2.2.bin` | FlySky Paladin PL18EV | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-pl18u-v1.2.2.bin` | FlySky Paladin PL18U | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-flysky-st16-v1.2.2.uf2` | FlySky ST16 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x10-v1.2.2.bin` | FrSky Horus X10 / X10S | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x10express-v1.2.2.bin` | FrSky Horus X10 / X10S Express | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x12s-v1.2.2.bin` | FrSky Horus X12S | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-qx7-v1.2.2-companion.bin` | FrSky QX7 / QX7S (**not** the QX7 ACCESS) | companion | ✅ hardware-tested (owner), November 2026 |
-| `edgetx-ue-frsky-qx7-v1.2.2-companion-auxmod.bin` | FrSky QX7 / QX7S **with the wireless mod only** (the C3 replaces its Bluetooth module; AUX1) | companion | ✅ hardware-tested (owner), November 2026 |
-| `edgetx-ue-frsky-qx7-access-v1.2.2-companion.bin` | FrSky Taranis Q X7 ACCESS | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-xlite-v1.2.2-companion.bin` | FrSky Taranis X-Lite | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-xlites-v1.2.2-companion.bin` | FrSky Taranis X-Lite S / Pro | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x9lite-v1.2.2-companion.bin` | FrSky Taranis X9 Lite | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x9lites-v1.2.2-companion.bin` | FrSky Taranis X9 Lite S | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x9d-v1.2.2-companion.bin` | FrSky Taranis X9D | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x9dplus-v1.2.2-companion.bin` | FrSky Taranis X9D Plus | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x9dplus2019-v1.2.2-companion.bin` | FrSky Taranis X9D Plus 2019 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-frsky-x9e-v1.2.2-companion.bin` | FrSky Taranis X9E | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-helloradiosky-v12-v1.2.2.uf2` | HelloRadioSky V12 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-helloradiosky-v14-v1.2.2-companion.bin` | HelloRadioSky V14 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-helloradiosky-v14lcd-v1.2.2-companion.bin` | HelloRadioSky V14 LCD | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-helloradiosky-v16-v1.2.2.bin` | HelloRadioSky V16 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-iflight-c14-v1.2.2.uf2` | iFlight Commando 14 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-iflight-commando8-v1.2.2-companion.bin` | iFlight Commando 8 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-bumblebee-v1.2.2-companion.bin` | Jumper Bumblebee | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-tlite-v1.2.2-companion.bin` | Jumper T-Lite (v1) | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-tpro-v1.2.2-companion.bin` | Jumper T-Pro (v1) | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-tpros-v1.2.2-companion.bin` | Jumper T-Pro S | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-tprov2-v1.2.2-companion.bin` | Jumper T-Pro V2 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t12-v1.2.2-companion.bin` | Jumper T12 / T12 Pro | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t12max-v1.2.2-companion.bin` | Jumper T12 MAX | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t14-v1.2.2-companion.bin` | Jumper T14 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t15-v1.2.2.bin` | Jumper T15 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t15pro-v1.2.2.uf2` | Jumper T15 Pro | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t16-v1.2.2.bin` | Jumper T16 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t18-v1.2.2.bin` | Jumper T18 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t20-v1.2.2-companion.bin` | Jumper T20 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t20v2-v1.2.2-companion.bin` | Jumper T20 V2 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-jumper-t22-v1.2.2.uf2` | Jumper T22 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-boxer-v1.2.2-companion.bin` | RadioMaster Boxer | companion | 👍 reported working (tester) |
-| `edgetx-ue-radiomaster-gx12-v1.2.2-companion.bin` | RadioMaster GX12 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-gx15-v1.2.2.uf2` | RadioMaster GX15 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-mt12-v1.2.2-companion.bin` | RadioMaster MT12 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-pocket-v1.2.2-companion.bin` | RadioMaster Pocket | companion | ✅ hardware-tested (owner), November 2026 |
-| `edgetx-ue-radiomaster-t8-v1.2.2-companion.bin` | RadioMaster T8 Pro / T8 Lite | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-tx12-v1.2.2-companion.bin` | RadioMaster TX12 | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-tx12mk2-v1.2.2-companion.bin` | RadioMaster TX12 MKII | companion | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-tx15-v1.2.2.uf2` | RadioMaster TX15 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-tx16s-v1.2.2.bin` | RadioMaster TX16S / TX16S MKII | full | ✅ hardware-tested (owner), November 2026 |
-| `edgetx-ue-radiomaster-tx16smk3-v1.2.2.uf2` | RadioMaster TX16S MK3 | full | 🔨 built, not hardware-tested |
-| `edgetx-ue-radiomaster-zorro-v1.2.2-companion.bin` | RadioMaster Zorro | companion | ✅ hardware-tested (owner), November 2026 |
+| File | Radio | Build |
+|---|---|---|
+| `edgetx-ue-betafpv-lr3pro-v1.2.2-companion.bin` | BETAFPV LiteRadio 3 Pro | companion |
+| `edgetx-ue-fatfish-f16-v1.2.2.bin` | Fatfish F16 | full |
+| `edgetx-ue-flysky-el18-v1.2.2.bin` | FlySky Elysium EL18 | full |
+| `edgetx-ue-flysky-nv14-v1.2.2.bin` | FlySky Nirvana NV14 | full |
+| `edgetx-ue-flysky-nb4p-v1.2.2.bin` | FlySky Noble NB4+ | full |
+| `edgetx-ue-flysky-pa01-v1.2.2.uf2` | FlySky PA01 | full |
+| `edgetx-ue-flysky-pl18-v1.2.2.bin` | FlySky Paladin PL18 | full |
+| `edgetx-ue-flysky-pl18ev-v1.2.2.bin` | FlySky Paladin PL18EV | full |
+| `edgetx-ue-flysky-pl18u-v1.2.2.bin` | FlySky Paladin PL18U | full |
+| `edgetx-ue-flysky-st16-v1.2.2.uf2` | FlySky ST16 | full |
+| `edgetx-ue-frsky-x10-v1.2.2.bin` | FrSky Horus X10 / X10S | full |
+| `edgetx-ue-frsky-x10express-v1.2.2.bin` | FrSky Horus X10 / X10S Express | full |
+| `edgetx-ue-frsky-x12s-v1.2.2.bin` | FrSky Horus X12S | full |
+| `edgetx-ue-frsky-qx7-v1.2.2-companion.bin` | FrSky QX7 / QX7S (**not** the QX7 ACCESS) | companion |
+| `edgetx-ue-frsky-qx7-v1.2.2-companion-auxmod.bin` | FrSky QX7 / QX7S **with the wireless mod only** (the C3 replaces its Bluetooth module; AUX1) | companion |
+| `edgetx-ue-frsky-qx7-access-v1.2.2-companion.bin` | FrSky Taranis Q X7 ACCESS | companion |
+| `edgetx-ue-frsky-xlite-v1.2.2-companion.bin` | FrSky Taranis X-Lite | companion |
+| `edgetx-ue-frsky-xlites-v1.2.2-companion.bin` | FrSky Taranis X-Lite S / Pro | companion |
+| `edgetx-ue-frsky-x9lite-v1.2.2-companion.bin` | FrSky Taranis X9 Lite | companion |
+| `edgetx-ue-frsky-x9lites-v1.2.2-companion.bin` | FrSky Taranis X9 Lite S | companion |
+| `edgetx-ue-frsky-x9d-v1.2.2-companion.bin` | FrSky Taranis X9D | companion |
+| `edgetx-ue-frsky-x9dplus-v1.2.2-companion.bin` | FrSky Taranis X9D Plus | companion |
+| `edgetx-ue-frsky-x9dplus2019-v1.2.2-companion.bin` | FrSky Taranis X9D Plus 2019 | companion |
+| `edgetx-ue-frsky-x9e-v1.2.2-companion.bin` | FrSky Taranis X9E | companion |
+| `edgetx-ue-helloradiosky-v12-v1.2.2.uf2` | HelloRadioSky V12 | full |
+| `edgetx-ue-helloradiosky-v14-v1.2.2-companion.bin` | HelloRadioSky V14 | companion |
+| `edgetx-ue-helloradiosky-v14lcd-v1.2.2-companion.bin` | HelloRadioSky V14 LCD | companion |
+| `edgetx-ue-helloradiosky-v16-v1.2.2.bin` | HelloRadioSky V16 | full |
+| `edgetx-ue-iflight-c14-v1.2.2.uf2` | iFlight Commando 14 | full |
+| `edgetx-ue-iflight-commando8-v1.2.2-companion.bin` | iFlight Commando 8 | companion |
+| `edgetx-ue-jumper-bumblebee-v1.2.2-companion.bin` | Jumper Bumblebee | companion |
+| `edgetx-ue-jumper-tlite-v1.2.2-companion.bin` | Jumper T-Lite (v1) | companion |
+| `edgetx-ue-jumper-tpro-v1.2.2-companion.bin` | Jumper T-Pro (v1) | companion |
+| `edgetx-ue-jumper-tpros-v1.2.2-companion.bin` | Jumper T-Pro S | companion |
+| `edgetx-ue-jumper-tprov2-v1.2.2-companion.bin` | Jumper T-Pro V2 | companion |
+| `edgetx-ue-jumper-t12-v1.2.2-companion.bin` | Jumper T12 / T12 Pro | companion |
+| `edgetx-ue-jumper-t12max-v1.2.2-companion.bin` | Jumper T12 MAX | companion |
+| `edgetx-ue-jumper-t14-v1.2.2-companion.bin` | Jumper T14 | companion |
+| `edgetx-ue-jumper-t15-v1.2.2.bin` | Jumper T15 | full |
+| `edgetx-ue-jumper-t15pro-v1.2.2.uf2` | Jumper T15 Pro | full |
+| `edgetx-ue-jumper-t16-v1.2.2.bin` | Jumper T16 | full |
+| `edgetx-ue-jumper-t18-v1.2.2.bin` | Jumper T18 | full |
+| `edgetx-ue-jumper-t20-v1.2.2-companion.bin` | Jumper T20 | companion |
+| `edgetx-ue-jumper-t20v2-v1.2.2-companion.bin` | Jumper T20 V2 | companion |
+| `edgetx-ue-jumper-t22-v1.2.2.uf2` | Jumper T22 | full |
+| `edgetx-ue-radiomaster-boxer-v1.2.2-companion.bin` | RadioMaster Boxer | companion |
+| `edgetx-ue-radiomaster-gx12-v1.2.2-companion.bin` | RadioMaster GX12 | companion |
+| `edgetx-ue-radiomaster-gx15-v1.2.2.uf2` | RadioMaster GX15 | full |
+| `edgetx-ue-radiomaster-mt12-v1.2.2-companion.bin` | RadioMaster MT12 | companion |
+| `edgetx-ue-radiomaster-pocket-v1.2.2-companion.bin` | RadioMaster Pocket | companion |
+| `edgetx-ue-radiomaster-t8-v1.2.2-companion.bin` | RadioMaster T8 Pro / T8 Lite | companion |
+| `edgetx-ue-radiomaster-tx12-v1.2.2-companion.bin` | RadioMaster TX12 | companion |
+| `edgetx-ue-radiomaster-tx12mk2-v1.2.2-companion.bin` | RadioMaster TX12 MKII | companion |
+| `edgetx-ue-radiomaster-tx15-v1.2.2.uf2` | RadioMaster TX15 | full |
+| `edgetx-ue-radiomaster-tx16s-v1.2.2.bin` | RadioMaster TX16S / TX16S MKII | full |
+| `edgetx-ue-radiomaster-tx16smk3-v1.2.2.uf2` | RadioMaster TX16S MK3 | full |
+| `edgetx-ue-radiomaster-zorro-v1.2.2-companion.bin` | RadioMaster Zorro | companion |
 
 ## Flash it
 Flash the `.bin` the way you'd flash official EdgeTX: EdgeTX Buddy (<https://buddy.edgetx.org>, *Flash local

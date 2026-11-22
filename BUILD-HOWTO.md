@@ -88,10 +88,10 @@ for a full build that keeps every EdgeTX menu (it may not fit in 512 KB of flash
 
 | Radio | Flags | Notes |
 |---|---|---|
-| RadioMaster Pocket | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.2 (November 2026), companion build. Internal CROSSFIRE; external multi and PXX1 left out to fit flash. |
-| RadioMaster Zorro | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Verified on v1.2.2 (November 2026), companion build. Tight flash fit, like the Pocket. |
-| FrSky Taranis Q X7 / Q X7S | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES -DUI_COMPANION=YES` | Verified on v1.2.2 (November 2026), companion build. The internal module is XJT/PXX1, so keep `PXX1=YES`. |
-| RadioMaster TX16S / TX16S MKII | `-DPCB=X10 -DPCBREV=TX16S` | Verified on v1.2.2 (November 2026), full build. |
+| RadioMaster Pocket | `-DPCB=X7 -DPCBREV=POCKET -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Tested in flight on v1.2.2, companion build. Internal CROSSFIRE; external multi and PXX1 left out to fit flash. |
+| RadioMaster Zorro | `-DPCB=X7 -DPCBREV=ZORRO -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=NO -DUI_COMPANION=YES` | Tested in flight on v1.2.2, companion build. Tight flash fit, like the Pocket. |
+| FrSky Taranis Q X7 / Q X7S | `-DPCB=X7 -DMULTIMODULE=OFF -DHELI=NO -DGHOST=NO -DPXX1=YES -DUI_COMPANION=YES` | Tested in flight on v1.2.2, companion build. The internal module is XJT/PXX1, so keep `PXX1=YES`. |
+| RadioMaster TX16S / TX16S MKII | `-DPCB=X10 -DPCBREV=TX16S` | Tested in flight on v1.2.2, full build. |
 | FrSky Taranis Q X7 ACCESS | `-DPCB=X7 -DPCBREV=ACCESS -DPXX1=YES -DUI_COMPANION=YES` |  |
 | RadioMaster Boxer | `-DPCB=X7 -DPCBREV=BOXER -DUI_COMPANION=YES` |  |
 | RadioMaster GX12 | `-DPCB=X7 -DPCBREV=GX12 -DUI_COMPANION=YES` |  |
@@ -152,10 +152,8 @@ Full EdgeTX board/flag reference: <https://github.com/EdgeTX/edgetx/blob/main/do
 
 ---
 
-## Adding a radio to the verified list
+## Checking your own build
 
-A radio is marked verified only after the checklist in `SUPPORTED-RADIOS.md` (section *Help verify your radio*) passes
-on real hardware. Run that checklist on your build and report the result, with your build flags, in
-[UltraEdge-app issues](https://github.com/50UR4V/UltraEdge-app/issues).
-
-Nothing is marked verified without a hardware check. Flying a build you made yourself is your call.
+Run the bench check in `SUPPORTED-RADIOS.md` (section *Check your radio after flashing*) on your build before you fly
+it, and report problems, with your build flags, in [UltraEdge-app issues](https://github.com/50UR4V/UltraEdge-app/issues).
+Flying a build you made yourself is your call.
